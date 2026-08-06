@@ -81,6 +81,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #6ca4ff; outline-
 .map-years { position: absolute; inset: 0; pointer-events: none; }
 .map-years > div { position: absolute; top: 43px; bottom: 22px; width: 1px; background: linear-gradient(rgba(102,111,131,.14), rgba(102,111,131,.035)); }
 .map-years span { position: absolute; top: -27px; left: 6px; color: #505866; font-size: 11px; font-weight: 720; letter-spacing: -.04em; }
+.map-years em { position: absolute; top: -4px; left: -7px; padding: 1px 3px; background: #090b0f; color: #6d7584; font-size: 9px; font-style: normal; letter-spacing: -2px; }
+.map-years .compressed-year { background: repeating-linear-gradient(180deg, rgba(102,111,131,.1) 0 3px, transparent 3px 8px); }
 .track-svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .track-core { fill: none; stroke-width: 5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .track-glow { fill: none; stroke-width: 18; opacity: .08; filter: url(#lineGlow); vector-effect: non-scaling-stroke; }
@@ -93,20 +95,21 @@ button:focus-visible, input:focus-visible { outline: 2px solid #6ca4ff; outline-
 
 .station { position: absolute; z-index: 5; width: 30px; height: 30px; padding: 0; transform: translate(-50%, -50%); border-radius: 50%; background: transparent; cursor: pointer; transition: opacity .2s ease; }
 .station.is-muted { opacity: .08; pointer-events: none; }
+.station-leader { position: absolute; z-index: 1; left: 15px; top: 15px; height: 1px; transform-origin: 0 50%; background: color-mix(in srgb, var(--station) 58%, #5e6674); opacity: .62; pointer-events: none; }
 .station-dot { position: absolute; inset: 6px; z-index: 3; display: grid; place-items: center; border: 3px solid var(--station); border-radius: 50%; background: #0b0d11; box-shadow: 0 0 0 3px #090b0f, 0 0 13px color-mix(in srgb, var(--station) 40%, transparent); transition: transform .16s ease, background .16s ease; }
 .station:hover .station-dot, .station.is-selected .station-dot { transform: scale(1.35); background: var(--station); }
 .station.is-complete .station-dot { inset: 4px; border-color: #72df98; background: #2eaf5d; color: white; box-shadow: 0 0 0 3px #090b0f, 0 0 15px rgba(88,207,131,.45); }
 .station.is-key .station-dot { inset: 1px; border-width: 4px; border-color: white; background: var(--station); box-shadow: 0 0 0 5px #090b0f, 0 0 22px color-mix(in srgb, var(--station) 60%, transparent); }
-.station-card { position: absolute; left: 50%; bottom: var(--card-offset, 30px); width: 142px; min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 7px 8px; transform: translateX(-50%); border: 1px solid #333946; border-radius: 8px; background: rgba(18,21,27,.97); box-shadow: 0 7px 23px rgba(0,0,0,.38); color: white; text-align: left; transition: transform .17s ease, border-color .17s ease, opacity .18s ease; }
+.station-card { position: absolute; left: 50%; bottom: var(--card-offset, 30px); width: 142px; min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 7px 8px; transform: translateX(calc(-50% + var(--label-shift, 0px))); border: 1px solid #333946; border-radius: 8px; background: rgba(18,21,27,.97); box-shadow: 0 7px 23px rgba(0,0,0,.38); color: white; text-align: left; transition: transform .17s ease, border-color .17s ease, opacity .18s ease; }
 .station-below .station-card { top: var(--card-offset, 30px); bottom: auto; }
-.station:hover .station-card, .station.is-selected .station-card { z-index: 30; transform: translateX(-50%) translateY(-3px); border-color: var(--station); box-shadow: 0 10px 35px rgba(0,0,0,.58), 0 0 0 1px color-mix(in srgb, var(--station) 25%, transparent); }
-.station-below:hover .station-card, .station-below.is-selected .station-card { transform: translateX(-50%) translateY(3px); }
+.station:hover .station-card, .station.is-selected .station-card { z-index: 30; transform: translateX(calc(-50% + var(--label-shift, 0px))) translateY(-3px); border-color: var(--station); box-shadow: 0 10px 35px rgba(0,0,0,.58), 0 0 0 1px color-mix(in srgb, var(--station) 25%, transparent); }
+.station-below:hover .station-card, .station-below.is-selected .station-card { transform: translateX(calc(-50% + var(--label-shift, 0px))) translateY(3px); }
 .station-copy { min-width: 0; flex: 1; }.station-copy strong, .station-copy small { display: block; overflow: hidden; }
 .station-copy strong { max-height: 28px; font-size: 11px; line-height: 1.25; }.station-copy small { margin-top: 3px; color: #7d8491; font-size: 8px; }
 .station-copy i { display: block; height: 2px; margin-top: 5px; overflow: hidden; border-radius: 2px; background: #303540; }.station-copy i b { display: block; height: 100%; background: #58cf83; }
 .station-poster { display: none; width: 46px; height: 66px; flex: 0 0 auto; object-fit: cover; border-radius: 4px; background: #20242c; }
-.zoom-close .station-card { bottom: 30px; width: 190px; min-height: 80px; padding: 6px; }.zoom-close .station-below .station-card { top: 30px; bottom: auto; }.zoom-close .station-poster { display: block; }.zoom-close .station-copy strong { max-height: 42px; font-size: 13px; }
-.zoom-overview .station-card { display: none; }.zoom-overview .station-dot { inset: 8px; border-width: 4px; }.zoom-overview .station.is-key .station-card, .zoom-overview .station.is-selected .station-card { display: flex; width: 180px; transform: translateX(-50%); }.zoom-overview .map-years > div:not(.major-year) span { display: none; }
+.zoom-close .station-card { width: 190px; min-height: 80px; padding: 6px; }.zoom-close .station-poster { display: block; }.zoom-close .station-copy strong { max-height: 42px; font-size: 13px; }
+.zoom-overview .station-card, .zoom-overview .station-leader { display: none; }.zoom-overview .station-dot { inset: 8px; border-width: 4px; }.zoom-overview .station.is-key .station-card, .zoom-overview .station.is-selected .station-card { display: flex; width: 180px; transform: translateX(calc(-50% + var(--label-shift, 0px))); }.zoom-overview .station.is-key .station-leader, .zoom-overview .station.is-selected .station-leader { display: block; }.zoom-overview .map-years > div:not(.major-year) span { display: none; }
 .map-help { position: absolute; left: 26px; bottom: 18px; display: flex; align-items: center; gap: 8px; color: #4e5664; font-size: 11px; }
 
 .minimap { position: absolute; z-index: 25; right: 18px; bottom: 18px; width: 260px; height: 72px; overflow: hidden; border: 1px solid #343a46; border-radius: 10px; background: rgba(12,14,18,.92); box-shadow: 0 10px 35px rgba(0,0,0,.42); cursor: crosshair; backdrop-filter: blur(12px); }

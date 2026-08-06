@@ -11,10 +11,7 @@ const WATCHED_KEY = "nexus-desktop-watched-v1";
 const EPISODES_KEY = "nexus-desktop-episodes-v1";
 const YEAR_START = 1998;
 const YEAR_END = 2028;
-const YEAR_WIDTH = 190;
 const MAP_LEFT = 250;
-const MAP_WIDTH = MAP_LEFT + (YEAR_END - YEAR_START) * YEAR_WIDTH + 420;
-const MAP_HEIGHT = 930;
 const MIN_ZOOM = 0.18;
 const MAX_ZOOM = 1.35;
 
@@ -22,15 +19,15 @@ const MONTHS: Record<string, number> = { ene: 0, feb: 1, mar: 2, abr: 3, may: 4,
 const TYPE_LABEL: Record<MCUItem["type"], string> = { movie: "Película", series: "Serie", animation: "Animación", special: "Especial" };
 
 const TRACKS = [
-  { id: "animation", label: "Universos animados", short: "Animación", color: "#25d0dd", y: 80 },
-  { id: "xmen", label: "X-Men · Fox", short: "X-Men", color: "#3b88ff", y: 180 },
-  { id: "fantastic", label: "Fantastic Four · legado", short: "Fantastic Four", color: "#ffb640", y: 280 },
-  { id: "other", label: "Defensores y legado", short: "Otros legados", color: "#ff793f", y: 380 },
-  { id: "tobey", label: "Spider-Man · Tobey", short: "Tobey", color: "#f24e86", y: 480 },
-  { id: "andrew", label: "Spider-Man · Andrew", short: "Andrew", color: "#9c70ff", y: 580 },
-  { id: "sony", label: "Sony Spider-Man Universe", short: "Sony", color: "#c757e7", y: 680 },
-  { id: "mcu", label: "Universo Cinematográfico Marvel", short: "UCM películas", color: "#f24545", y: 780 },
-  { id: "series", label: "UCM · series y especiales", short: "UCM series", color: "#58cf83", y: 880 },
+  { id: "animation", label: "Universos animados", short: "Animación", color: "#25d0dd" },
+  { id: "xmen", label: "X-Men · Fox", short: "X-Men", color: "#3b88ff" },
+  { id: "fantastic", label: "Fantastic Four · legado", short: "Fantastic Four", color: "#ffb640" },
+  { id: "other", label: "Defensores y legado", short: "Otros legados", color: "#ff793f" },
+  { id: "tobey", label: "Spider-Man · Tobey", short: "Tobey", color: "#f24e86" },
+  { id: "andrew", label: "Spider-Man · Andrew", short: "Andrew", color: "#9c70ff" },
+  { id: "sony", label: "Sony Spider-Man Universe", short: "Sony", color: "#c757e7" },
+  { id: "mcu", label: "Universo Cinematográfico Marvel", short: "UCM películas", color: "#f24545" },
+  { id: "series", label: "UCM · series y especiales", short: "UCM series", color: "#58cf83" },
 ] as const;
 
 const ERAS = [
@@ -73,7 +70,41 @@ function trackOf(item: MCUItem) {
 
 const ITEMS: MapItem[] = MCU_ITEMS.map((item, order) => ({ ...item, order, releaseValue: releaseOf(item), trackId: trackOf(item) })).sort((a, b) => a.releaseValue - b.releaseValue || a.order - b.order);
 const ITEM_BY_ID = new Map(ITEMS.map((item) => [item.id, item]));
-const xOf = (release: number) => MAP_LEFT + (release - YEAR_START) * YEAR_WIDTH;
+
+// Cronología elástica: los años con más estrenos reciben espacio extra y los
+// años vacíos se comprimen. Todas las ramas comparten los mismos anclajes.
+const YEAR_WIDTHS = new Map<number, number>();
+const YEAR_STARTS = new Map<number, number>();
+let elasticCursor = MAP_LEFT;
+for (let year = YEAR_START; year <= YEAR_END; year += 1) {
+  const inYear = ITEMS.filter((item) => Math.floor(item.releaseValue) === year);
+  const peakTrackDensity = Math.max(0, ...TRACKS.map((track) => inYear.filter((item) => item.trackId === track.id).length));
+  const width = inYear.length === 0
+    ? 64
+    : Math.min(300, 108 + Math.max(0, peakTrackDensity - 1) * 38 + Math.max(0, inYear.length - 4) * 8);
+  YEAR_STARTS.set(year, elasticCursor);
+  YEAR_WIDTHS.set(year, width);
+  elasticCursor += width;
+}
+const MAP_WIDTH = elasticCursor + 330;
+const xOf = (release: number) => {
+  const year = Math.max(YEAR_START, Math.min(YEAR_END, Math.floor(release)));
+  const fraction = Math.max(0, Math.min(.999, release - year));
+  return (YEAR_STARTS.get(year) || MAP_LEFT) + fraction * (YEAR_WIDTHS.get(year) || 100);
+};
+const KEY_IDS = new Set(["no-way-home", "deadpool-wolverine", "endgame", "iron-man", "doomsday"]);
+
+function verticalMetrics(zoom: number) {
+  if (zoom < .38) return { top: 110, gap: 72, height: 110 * 2 + (TRACKS.length - 1) * 72 };
+  if (zoom < .78) return { top: 190, gap: 190, height: 190 * 2 + (TRACKS.length - 1) * 190 };
+  return { top: 240, gap: 250, height: 240 * 2 + (TRACKS.length - 1) * 250 };
+}
+
+function yOfTrack(trackId: string, zoom: number) {
+  const metrics = verticalMetrics(zoom);
+  const index = Math.max(0, TRACKS.findIndex((track) => track.id === trackId));
+  return metrics.top + index * metrics.gap;
+}
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 function posterFor(item: MCUItem) {
@@ -110,6 +141,40 @@ function App() {
   const completedCount = releasedItems.filter((item) => watched.has(item.id)).length;
   const percent = Math.round((completedCount / releasedItems.length) * 100);
   const searchResults = useMemo(() => query.trim() ? ITEMS.filter((item) => normalize(item.title).includes(normalize(query))).slice(0, 7) : [], [query]);
+  const mapHeight = verticalMetrics(zoom).height;
+  const labelLayout = useMemo(() => {
+    const result = new Map<string, { below: boolean; offset: number; shift: number; leaderLength: number; leaderAngle: number }>();
+    const cardWidth = zoom >= .78 ? 190 : zoom < .38 ? 180 : 142;
+    const slotCount = 4;
+    const levelStep = zoom >= .78 ? 125 : 82;
+    const screenGap = zoom >= .78 ? 16 : 11;
+    TRACKS.forEach((track) => {
+      const slots = Array.from({ length: slotCount }, () => Number.NEGATIVE_INFINITY);
+      const trackItems = ITEMS.filter((item) => item.trackId === track.id && (zoom >= .38 || KEY_IDS.has(item.id)));
+      trackItems.forEach((item) => {
+        const desiredCenter = xOf(item.releaseValue) * zoom;
+        let bestSlot = 0;
+        let bestCenter = Number.POSITIVE_INFINITY;
+        slots.forEach((lastRight, slot) => {
+          const candidateCenter = Math.max(desiredCenter, lastRight + screenGap + cardWidth / 2);
+          if (candidateCenter < bestCenter) { bestCenter = candidateCenter; bestSlot = slot; }
+        });
+        const shift = Math.max(0, bestCenter - desiredCenter);
+        slots[bestSlot] = bestCenter + cardWidth / 2;
+        const below = bestSlot % 2 === 1;
+        const offset = 30 + Math.floor(bestSlot / 2) * levelStep;
+        const verticalDelta = below ? offset - 15 : -(offset - 15);
+        result.set(item.id, {
+          below,
+          offset,
+          shift,
+          leaderLength: Math.max(14, Math.hypot(shift, verticalDelta)),
+          leaderAngle: Math.atan2(verticalDelta, shift || .001) * 180 / Math.PI,
+        });
+      });
+    });
+    return result;
+  }, [zoom]);
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -121,7 +186,7 @@ function App() {
     const viewport = viewportRef.current;
     const track = TRACKS.find((entry) => entry.id === item.trackId);
     if (!viewport || !track) return;
-    viewport.scrollTo({ left: xOf(item.releaseValue) * zoom - viewport.clientWidth / 2, top: track.y - viewport.clientHeight / 2, behavior: "smooth" });
+    viewport.scrollTo({ left: xOf(item.releaseValue) * zoom - viewport.clientWidth / 2, top: yOfTrack(item.trackId, zoom) - viewport.clientHeight / 2, behavior: "smooth" });
     if (open) setSelected(item);
   }, [zoom]);
 
@@ -130,7 +195,7 @@ function App() {
     if (!viewport) return;
     const next = Math.max(MIN_ZOOM, Math.min(0.42, (viewport.clientWidth - 36) / MAP_WIDTH));
     setZoom(next);
-    requestAnimationFrame(() => viewport.scrollTo({ left: 0, top: Math.max(0, MAP_HEIGHT - viewport.clientHeight) / 2, behavior: "smooth" }));
+    requestAnimationFrame(() => viewport.scrollTo({ left: 0, top: Math.max(0, verticalMetrics(next).height - viewport.clientHeight) / 2, behavior: "smooth" }));
   }, []);
 
   const changeZoom = useCallback((nextValue: number, clientX?: number, clientY?: number) => {
@@ -141,8 +206,9 @@ function App() {
     const localX = clientX === undefined ? viewport.clientWidth / 2 : clientX - rect.left;
     const localY = clientY === undefined ? viewport.clientHeight / 2 : clientY - rect.top;
     const worldX = (viewport.scrollLeft + localX) / zoom;
+    const verticalRatio = (viewport.scrollTop + localY) / verticalMetrics(zoom).height;
     setZoom(next);
-    requestAnimationFrame(() => viewport.scrollTo({ left: worldX * next - localX }));
+    requestAnimationFrame(() => viewport.scrollTo({ left: worldX * next - localX, top: verticalRatio * verticalMetrics(next).height - localY }));
   }, [zoom]);
 
   useEffect(() => {
@@ -273,22 +339,23 @@ function App() {
           onPointerMove={(event) => { if (!dragging) return; const viewport = viewportRef.current; if (viewport) viewport.scrollTo({ left: dragRef.current.left - (event.clientX - dragRef.current.x), top: dragRef.current.top - (event.clientY - dragRef.current.y) }); }}
           onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)}
         >
-          <div className="map-scale" style={{ width: MAP_WIDTH * zoom, height: MAP_HEIGHT }}>
-            <div className="map-world" style={{ width: MAP_WIDTH * zoom, height: MAP_HEIGHT }}>
-              <div className="map-years">{Array.from({ length: YEAR_END - YEAR_START + 1 }, (_, index) => YEAR_START + index).map((year) => <div key={year} className={year % 5 === 0 || year === YEAR_START ? "major-year" : ""} style={{ left: xOf(year) * zoom }}><span>{year}</span></div>)}</div>
-              <MapLines activeTrack={activeTrack} zoom={zoom} />
+          <div className="map-scale" style={{ width: MAP_WIDTH * zoom, height: mapHeight }}>
+            <div className="map-world" style={{ width: MAP_WIDTH * zoom, height: mapHeight }}>
+              <div className="map-years">{Array.from({ length: YEAR_END - YEAR_START + 1 }, (_, index) => YEAR_START + index).map((year) => {
+                const compressed = (YEAR_WIDTHS.get(year) || 100) <= 70;
+                return <div key={year} className={`${year % 5 === 0 || year === YEAR_START ? "major-year" : ""} ${compressed ? "compressed-year" : ""}`} style={{ left: xOf(year) * zoom }}><span>{year}</span>{compressed && <em>//</em>}</div>;
+              })}</div>
+              <MapLines activeTrack={activeTrack} zoom={zoom} mapHeight={mapHeight} />
               {ITEMS.map((item) => {
                 const track = TRACKS.find((entry) => entry.id === item.trackId)!;
-                const trackItems = ITEMS.filter((entry) => entry.trackId === item.trackId);
-                const trackIndex = trackItems.findIndex((entry) => entry.id === item.id);
-                const below = trackIndex % 2 === 1;
-                const labelOffset = 30 + (Math.floor((trackIndex % 4) / 2) * 28);
+                const layout = labelLayout.get(item.id) || { below: false, offset: 30, shift: 0, leaderLength: 15, leaderAngle: -90 };
                 const completed = watched.has(item.id);
-                const isKey = ["no-way-home", "deadpool-wolverine", "endgame", "iron-man", "doomsday"].includes(item.id);
+                const isKey = KEY_IDS.has(item.id);
                 const muted = activeTrack !== "all" && activeTrack !== item.trackId && !(isKey && item.trackId === "mcu");
                 const episodeTotal = EPISODE_COUNTS[item.id] || 0;
                 const episodeDone = episodes[item.id]?.length || 0;
-                return <button key={item.id} className={`station ${below ? "station-below" : ""} ${completed ? "is-complete" : ""} ${selected?.id === item.id ? "is-selected" : ""} ${isKey ? "is-key" : ""} ${muted ? "is-muted" : ""}`} style={{ left: xOf(item.releaseValue) * zoom, top: track.y, "--station": track.color, "--card-offset": `${labelOffset}px` } as React.CSSProperties} onClick={() => setSelected(item)} title={`${item.title} · ${item.date}`}>
+                return <button key={item.id} data-track={item.trackId} data-year={Math.floor(item.releaseValue)} className={`station ${layout.below ? "station-below" : ""} ${completed ? "is-complete" : ""} ${selected?.id === item.id ? "is-selected" : ""} ${isKey ? "is-key" : ""} ${muted ? "is-muted" : ""}`} style={{ left: xOf(item.releaseValue) * zoom, top: yOfTrack(item.trackId, zoom), "--station": track.color, "--card-offset": `${layout.offset}px`, "--label-shift": `${layout.shift}px` } as React.CSSProperties} onClick={() => setSelected(item)} title={`${item.title} · ${item.date}`}>
+                  <span className="station-leader" style={{ width: `${layout.leaderLength}px`, transform: `rotate(${layout.leaderAngle}deg)` }}/>
                   <span className="station-dot">{completed && <Icon name="check" size={11}/>}</span>
                   <span className="station-card">
                     <img className="station-poster" src={posterFor(item)} alt="" loading="lazy"/>
@@ -310,7 +377,7 @@ function App() {
   );
 }
 
-function MapLines({ activeTrack, zoom }: { activeTrack: string; zoom: number }) {
+function MapLines({ activeTrack, zoom, mapHeight }: { activeTrack: string; zoom: number; mapHeight: number }) {
   const noWayHome = ITEM_BY_ID.get("no-way-home")!;
   const deadpoolWolverine = ITEM_BY_ID.get("deadpool-wolverine")!;
   const endgame = ITEM_BY_ID.get("endgame") || ITEMS.find((item) => item.title === "Avengers: Endgame")!;
@@ -318,12 +385,11 @@ function MapLines({ activeTrack, zoom }: { activeTrack: string; zoom: number }) 
   const xmenLast = ITEMS.filter((item) => item.trackId === "xmen" && item.releaseValue < deadpoolWolverine.releaseValue).at(-1)!;
   const pathFor = (trackId: string) => {
     const items = ITEMS.filter((item) => item.trackId === trackId);
-    const track = TRACKS.find((entry) => entry.id === trackId)!;
-    return { start: xOf(items[0].releaseValue), end: xOf(items.at(-1)!.releaseValue), y: track.y };
+    return { start: xOf(items[0].releaseValue), end: xOf(items.at(-1)!.releaseValue), y: yOfTrack(trackId, zoom) };
   };
-  const mcuY = TRACKS.find((track) => track.id === "mcu")!.y;
-  const seriesY = TRACKS.find((track) => track.id === "series")!.y;
-  return <><svg className="track-svg" width={MAP_WIDTH * zoom} height={MAP_HEIGHT} viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
+  const mcuY = yOfTrack("mcu", zoom);
+  const seriesY = yOfTrack("series", zoom);
+  return <><svg className="track-svg" width={MAP_WIDTH * zoom} height={mapHeight} viewBox={`0 0 ${MAP_WIDTH} ${mapHeight}`} preserveAspectRatio="none" aria-hidden="true">
     <defs><filter id="lineGlow"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
     {TRACKS.map((track) => {
       const line = pathFor(track.id);
@@ -333,26 +399,26 @@ function MapLines({ activeTrack, zoom }: { activeTrack: string; zoom: number }) 
         <path className="track-core" stroke={track.color} d={`M ${line.start} ${line.y} L ${line.end} ${line.y}`}/>
       </g>;
     })}
-    <Connection fromId="spiderman-raimi-3" toX={xOf(noWayHome.releaseValue)} toY={mcuY} color="#f24e86" active={activeTrack === "all" || activeTrack === "tobey"}/>
-    <Connection fromId="amazing-spiderman-2" toX={xOf(noWayHome.releaseValue)} toY={mcuY} color="#9c70ff" active={activeTrack === "all" || activeTrack === "andrew"}/>
-    <Connection fromId="venom-2" toX={xOf(noWayHome.releaseValue)} toY={mcuY} color="#c757e7" active={activeTrack === "all" || activeTrack === "sony"} dashed/>
-    <Connection fromId={xmenLast.id} toX={xOf(deadpoolWolverine.releaseValue)} toY={mcuY} color="#3b88ff" active={activeTrack === "all" || activeTrack === "xmen"}/>
-    <Connection fromId={ITEMS.filter((item) => item.trackId === "fantastic" && item.releaseValue < deadpoolWolverine.releaseValue).at(-1)?.id || "fantastic-four-2015"} toX={xOf(deadpoolWolverine.releaseValue)} toY={mcuY} color="#ffb640" active={activeTrack === "all" || activeTrack === "fantastic"} dashed/>
+    <Connection fromId="spiderman-raimi-3" toX={xOf(noWayHome.releaseValue)} toY={mcuY} color="#f24e86" active={activeTrack === "all" || activeTrack === "tobey"} zoom={zoom}/>
+    <Connection fromId="amazing-spiderman-2" toX={xOf(noWayHome.releaseValue)} toY={mcuY} color="#9c70ff" active={activeTrack === "all" || activeTrack === "andrew"} zoom={zoom}/>
+    <Connection fromId="venom-2" toX={xOf(noWayHome.releaseValue)} toY={mcuY} color="#c757e7" active={activeTrack === "all" || activeTrack === "sony"} dashed zoom={zoom}/>
+    <Connection fromId={xmenLast.id} toX={xOf(deadpoolWolverine.releaseValue)} toY={mcuY} color="#3b88ff" active={activeTrack === "all" || activeTrack === "xmen"} zoom={zoom}/>
+    <Connection fromId={ITEMS.filter((item) => item.trackId === "fantastic" && item.releaseValue < deadpoolWolverine.releaseValue).at(-1)?.id || "fantastic-four-2015"} toX={xOf(deadpoolWolverine.releaseValue)} toY={mcuY} color="#ffb640" active={activeTrack === "all" || activeTrack === "fantastic"} dashed zoom={zoom}/>
     <path className="branch-connector" stroke="#58cf83" d={`M ${xOf(endgame.releaseValue)} ${mcuY} C ${xOf(endgame.releaseValue) + 80} ${mcuY}, ${xOf(firstSeries.releaseValue) - 100} ${seriesY}, ${xOf(firstSeries.releaseValue)} ${seriesY}`}/>
     <g className="legend-key"><circle cx={xOf(noWayHome.releaseValue)} cy={mcuY} r="13"/><circle cx={xOf(deadpoolWolverine.releaseValue)} cy={mcuY} r="13"/></g>
   </svg>{TRACKS.map((track) => {
     const line = pathFor(track.id);
     const muted = activeTrack !== "all" && activeTrack !== track.id && track.id !== "mcu";
-    return <span key={track.id} className={`track-name ${muted ? "line-muted" : ""}`} style={{ left: Math.max(18, line.start * zoom - 14), top: track.y - 27, color: track.color }}>{track.label}</span>;
+    return <span key={track.id} className={`track-name ${muted ? "line-muted" : ""}`} style={{ left: Math.max(18, line.start * zoom - 14), top: line.y - 27, color: track.color }}>{track.label}</span>;
   })}</>;
 }
 
-function Connection({ fromId, toX, toY, color, active, dashed = false }: { fromId: string; toX: number; toY: number; color: string; active: boolean; dashed?: boolean }) {
+function Connection({ fromId, toX, toY, color, active, zoom, dashed = false }: { fromId: string; toX: number; toY: number; color: string; active: boolean; zoom: number; dashed?: boolean }) {
   const from = ITEM_BY_ID.get(fromId);
   if (!from) return null;
-  const track = TRACKS.find((entry) => entry.id === from.trackId)!;
   const fromX = xOf(from.releaseValue);
-  return <path className={`branch-connector ${active ? "" : "line-muted"} ${dashed ? "is-dashed" : ""}`} stroke={color} d={`M ${fromX} ${track.y} C ${fromX + 160} ${track.y}, ${toX - 220} ${toY}, ${toX} ${toY}`}/>;
+  const fromY = yOfTrack(from.trackId, zoom);
+  return <path className={`branch-connector ${active ? "" : "line-muted"} ${dashed ? "is-dashed" : ""}`} stroke={color} d={`M ${fromX} ${fromY} C ${fromX + 160} ${fromY}, ${toX - 220} ${toY}, ${toX} ${toY}`}/>;
 }
 
 function MiniMap({ zoom, mapScroll, activeTrack, onNavigate }: { zoom: number; mapScroll: { left: number; top: number; width: number; height: number }; activeTrack: string; onNavigate: (ratio: number) => void }) {
