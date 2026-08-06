@@ -1,0 +1,44 @@
+module.exports = {
+  packagerConfig: {
+    asar: true,
+    icon: "desktop/assets/nexus",
+    executableName: "Nexus MCU",
+    appCopyright: "Copyright © 2026 Marco Marquez",
+    win32metadata: {
+      CompanyName: "Nexus",
+      FileDescription: "Mapa interactivo del multiverso Marvel",
+      ProductName: "Nexus MCU",
+    },
+    ignore: [
+      /^\/\.git($|\/)/,
+      /^\/\.next($|\/)/,
+      /^\/\.openai($|\/)/,
+      /^\/\.vinext($|\/)/,
+      /^\/\.wrangler($|\/)/,
+      /^\/app($|\/)/,
+      /^\/build($|\/)/,
+      /^\/db($|\/)/,
+      /^\/dist($|\/)/,
+      /^\/drizzle($|\/)/,
+      /^\/examples($|\/)/,
+      /^\/outputs($|\/)/,
+      /^\/public($|\/)/,
+      /^\/tests($|\/)/,
+      /^\/work($|\/)/,
+      /^\/worker($|\/)/,
+    ],
+  },
+  rebuildConfig: {},
+  makers: [
+    {
+      name: "@electron-forge/maker-squirrel",
+      config: {
+        name: "NexusMCU",
+        setupExe: "Nexus-MCU-Setup.exe",
+        setupIcon: "desktop/assets/nexus.ico",
+        iconUrl: "https://nexus-mcu-tracker.marcomarquezherrera.chatgpt.site/icon-512.png",
+        noMsi: true,
+      },
+    },
+  ],
+};

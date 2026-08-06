@@ -1,6 +1,10 @@
 {
   "name": "nexus-mcu-tracker",
   "version": "0.1.0",
+  "productName": "Nexus MCU",
+  "description": "Mapa interactivo del multiverso audiovisual de Marvel.",
+  "author": "Marco Marquez",
+  "main": "desktop/main.cjs",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -11,7 +15,11 @@
     "start": "vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "desktop:build": "vite build --config desktop/vite.config.ts",
+    "desktop:start": "npm run desktop:build && electron .",
+    "desktop:package": "npm run desktop:build && electron-forge package",
+    "desktop:make": "npm run desktop:build && electron-forge make"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
@@ -20,6 +28,8 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
     "@eslint/js": "9.39.4",
     "@next/eslint-plugin-next": "16.2.6",
     "@rolldown/binding-win32-x64-msvc": "^1.0.1",
@@ -30,6 +40,7 @@
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
+    "electron": "42.7.1",
     "eslint": "9.39.4",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react": "7.37.5",
