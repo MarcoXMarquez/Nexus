@@ -1,0 +1,15 @@
+.git
+.openai
+.vinext
+.wrangler
+build
+desktop-dist
+dist
+examples
+out
+outputs
+proptoopips
+tests
+work
+worker
+*.nexus-marathon

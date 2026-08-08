@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Assistant - Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 20px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .avatar.ai {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+        }
+
+        .avatar.user {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 15px 20px;
+            border-radius: 20px;
+            line-height: 1.5;
+        }
+
+        .message.ai .message-content {
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-bottom-left-radius: 5px;
+        }
+
+        .message.user .message-content {
+            background: rgba(240, 147, 251, 0.2);
+            border: 1px solid rgba(240, 147, 251, 0.3);
+            border-bottom-right-radius: 5px;
+        }
+
+        .message-content h4 {
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            color: #667eea;
+        }
+
+        .message-content ul {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+
+        .message-content li {
+            margin-bottom: 5px;
+        }
+
+        .suggestions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .suggestion-chip {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+        }
+
+        .suggestion-chip:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .input-area input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        .input-area input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .input-area button {
+            padding: 12px 25px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+
+        .input-area button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 5px;
+            padding: 10px;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+            }
+            30% {
+                transform: translateY(-10px);
+            }
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .quick-action-btn {
+            padding: 8px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.8rem;
+        }
+
+        .quick-action-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .context-info {
+            background: rgba(102, 126, 234, 0.1);
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+            border-left: 3px solid #667eea;
+        }
+
+        .voice-button {
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .voice-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .voice-button.recording {
+            background: #f5576c;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(245, 87, 108, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 10px rgba(245, 87, 108, 0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 MCU AI Assistant</h1>
+            <div class="quick-actions">
+                <button class="quick-action-btn" onclick="clearChat()">🗑️ Limpiar</button>
+                <button class="quick-action-btn" onclick="exportChat()">📥 Exportar</button>
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <div class="context-info">
+                <strong>Contexto:</strong> Has visto 23 títulos del MCU (72% completado). Tu última vista fue "Spider-Man: No Way Home".
+            </div>
+
+            <div class="suggestions">
+                <div class="suggestion-chip" onclick="askSuggestion('¿Qué debo ver después?')">¿Qué debo ver después?</div>
+                <div class="suggestion-chip" onclick="askSuggestion('Explícame el multiverso')">Explícame el multiverso</div>
+                <div class="suggestion-chip" onclick="askSuggestion('Orden cronológico')">Orden cronológico</div>
+                <div class="suggestion-chip" onclick="askSuggestion('Recomendaciones')">Recomendaciones</div>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <div class="message ai">
+                    <div class="avatar ai">🤖</div>
+                    <div class="message-content">
+                        <h4>MCU AI Assistant</h4>
+                        <p>¡Hola! Soy tu asistente especializado en el Marvel Cinematic Universe. Puedo ayudarte con:</p>
+                        <ul>
+                            <li>Recomendaciones personalizadas basadas en tu historial</li>
+                            <li>Explicaciones de tramas complejas y el multiverso</li>
+                            <li>Órdenes de viewing (cronológico, por fase, por personaje)</li>
+                            <li>Conexiones entre películas y series</li>
+                            <li>Información sobre personajes y sus historias</li>
+                        </ul>
+                        <p>¿En qué te puedo ayudar hoy?</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="userInput" placeholder="Escribe tu pregunta..." onkeypress="handleKeyPress(event)">
+                <button class="voice-button" id="voiceBtn" onclick="toggleVoice()">🎤</button>
+                <button onclick="sendMessage()">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chatMessages');
+        const userInput = document.getElementById('userInput');
+        const voiceBtn = document.getElementById('voiceBtn');
+        let isRecording = false;
+
+        const aiResponses = {
+            '¿qué debo ver después?': {
+                response: `Basado en tu progreso (72% del MCU), te recomiendo ver <strong>Loki (Temporada 2)</strong>. Es crucial para entender el multiverso antes de continuar con las películas de la Fase 5.
+
+Después de Loki, te sugiero este orden:
+1. Loki Temporada 2
+2. What If...? Temporada 2
+3. The Marvels
+4. Echo
+5. Deadpool 3
+
+¿Quieres que te explique por qué este orden?`,
+                context: 'Recomendación basada en historial'
+            },
+            'explícame el multiverso': {
+                response: `El <strong>Multiverso Marvel</strong> es un concepto clave que introduce múltiples realidades alternativas. Aquí está el breakdown:
+
+**Universos Principales:**
+- <strong>Earth-616 (MCU)</strong>: La línea temporal principal donde ocurren las películas
+- <strong>Earth-838</strong>: Universo de los Illuminati (visto en Doctor Strange 2)
+- <strong>Earth-2099</strong>: Universo futurista de Spider-Man 2099
+- <strong>Earth-TRN688</strong>: Universo de los X-Men de Fox
+
+**Cómo funciona:**
+- Las decisiones crean nuevas ramas temporales
+- Hechizos de brujería pueden abrir portales entre universos
+- El "Incursión" es cuando dos universos colisionan y se destruyen
+
+¿Quieres profundizar en algún universo específico?`,
+                context: 'Explicación del multiverso'
+            },
+            'orden cronológico': {
+                response: `Aquí está el <strong>orden cronológico</strong> del MCU hasta el momento:
+
+**Era 1: Los Comienzos**
+1. Captain America: The First Avenger (1942)
+2. Captain Marvel (1995)
+3. Iron Man (2008)
+
+**Era 2: La Construcción**
+4. Iron Man 2 (2010)
+5. The Incredible Hulk (2010)
+6. Thor (2011)
+7. Captain America: The Winter Soldier (2014)
+
+**Era 3: La Convergencia**
+8. Avengers: Age of Ultron (2015)
+9. Ant-Man (2015)
+10. Captain America: Civil War (2016)
+
+...y así sucesivamente hasta llegar a las fases del multiverso.
+
+¿Prefieres el orden por fase o por personaje?`,
+                context: 'Orden cronológico del MCU'
+            },
+            'recomendaciones': {
+                response: `Basándome en tu gusto por el MCU, aquí tienes algunas recomendaciones:
+
+**Si te gustó Iron Man:**
+- Iron Man 2 y 3 (desarrollo del personaje)
+- Avengers: Infinity War (su arco final)
+
+**Si te gustó Spider-Man:**
+- Spider-Man: Homecoming, Far From Home, No Way Home
+- Across the Spider-Verse (multiverso animado)
+
+**Si te gustó el aspecto cósmico:**
+- Guardianes de la Galaxia 1 y 2
+- Thor: Ragnarok
+- Captain Marvel
+
+**Para entender el multiverso:**
+- Loki (Temporada 1 y 2)
+- What If?
+- Doctor Strange in the Multiverse of Madness
+
+¿Qué tipo de contenido prefieres?`,
+                context: 'Recomendaciones personalizadas'
+            }
+        };
+
+        function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            // Add user message
+            addMessage(message, 'user');
+            userInput.value = '';
+
+            // Show typing indicator
+            showTyping();
+
+            // Simulate AI response
+            setTimeout(() => {
+                hideTyping();
+                const response = getAIResponse(message);
+                addMessage(response, 'ai');
+            }, 1500);
+        }
+
+        function addMessage(content, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const avatar = type === 'ai' ? '🤖' : '👤';
+            const title = type === 'ai' ? 'MCU AI Assistant' : 'Tú';
+            
+            messageDiv.innerHTML = `
+                <div class="avatar ${type}">${avatar}</div>
+                <div class="message-content">
+                    <h4>${title}</h4>
+                    <p>${content}</p>
+                </div>
+            `;
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function getAIResponse(message) {
+            const lowerMessage = message.toLowerCase();
+            
+            for (const [key, value] of Object.entries(aiResponses)) {
+                if (lowerMessage.includes(key.toLowerCase()) || 
+                    lowerMessage.includes(key.split(' ')[0]) ||
+                    key.toLowerCase().includes(lowerMessage)) {
+                    return value.response;
+                }
+            }
+            
+            // Default response
+            return `Interesante pregunta. Basado en tu conocimiento del MCU, puedo ayudarte con:
+
+- Recomendaciones de qué ver
+- Explicaciones de tramas y personajes
+- Órdenes de viewing
+- Conexiones entre títulos
+
+¿Podrías ser más específico sobre qué te gustaría saber?`;
+        }
+
+        function showTyping() {
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message ai';
+            typingDiv.id = 'typingIndicator';
+            typingDiv.innerHTML = `
+                <div class="avatar ai">🤖</div>
+                <div class="message-content">
+                    <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(typingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function hideTyping() {
+            const typing = document.getElementById('typingIndicator');
+            if (typing) typing.remove();
+        }
+
+        function askSuggestion(suggestion) {
+            userInput.value = suggestion;
+            sendMessage();
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function clearChat() {
+            chatMessages.innerHTML = `
+                <div class="message ai">
+                    <div class="avatar ai">🤖</div>
+                    <div class="message-content">
+                        <h4>MCU AI Assistant</h4>
+                        <p>Chat limpiado. ¿En qué te puedo ayudar?</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function exportChat() {
+            const messages = chatMessages.querySelectorAll('.message');
+            let chatText = 'MCU AI Assistant - Chat Export\n\n';
+            
+            messages.forEach(msg => {
+                const isAI = msg.classList.contains('ai');
+                const content = msg.querySelector('.message-content p').textContent;
+                chatText += `${isAI ? '🤖 AI:' : '👤 Tú:'} ${content}\n\n`;
+            });
+            
+            // Create download
+            const blob = new Blob([chatText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'mcu-chat-export.txt';
+            a.click();
+        }
+
+        function toggleVoice() {
+            isRecording = !isRecording;
+            voiceBtn.classList.toggle('recording');
+            
+            if (isRecording) {
+                // Simulate voice recording
+                setTimeout(() => {
+                    if (isRecording) {
+                        userInput.value = "¿Qué películas de Spider-Man debo ver?";
+                        toggleVoice();
+                    }
+                }, 2000);
+            }
+        }
+    </script>
+</body>
+</html>

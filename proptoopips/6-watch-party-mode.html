@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watch Party Mode - Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(90deg, #f953c6, #00f5ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .main-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 300px 1fr 300px;
+            gap: 20px;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow-y: auto;
+        }
+
+        .sidebar h3 {
+            margin-bottom: 15px;
+            color: #f953c6;
+            font-size: 1.1rem;
+        }
+
+        .party-info {
+            background: rgba(249, 83, 198, 0.1);
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            border-left: 3px solid #f953c6;
+        }
+
+        .party-info h4 {
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .party-info p {
+            font-size: 0.85rem;
+            opacity: 0.8;
+            margin-bottom: 5px;
+        }
+
+        .participant-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .participant {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+
+        .participant:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .participant-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .participant-info {
+            flex: 1;
+        }
+
+        .participant-name {
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .participant-status {
+            font-size: 0.75rem;
+            opacity: 0.7;
+        }
+
+        .participant-status.online {
+            color: #00f5ff;
+        }
+
+        .participant-status.watching {
+            color: #f953c6;
+        }
+
+        .sync-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #00f5ff;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .video-area {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .video-placeholder {
+            width: 100%;
+            max-width: 600px;
+            aspect-ratio: 16/9;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            margin-bottom: 20px;
+        }
+
+        .video-placeholder h3 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: #f953c6;
+        }
+
+        .video-placeholder p {
+            opacity: 0.7;
+            font-size: 0.9rem;
+        }
+
+        .play-button {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+            border: none;
+            cursor: pointer;
+            font-size: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+
+        .play-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 10px 30px rgba(249, 83, 198, 0.5);
+        }
+
+        .video-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .control-btn {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: white;
+        }
+
+        .control-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .control-btn.active {
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+            border: none;
+        }
+
+        .progress-bar {
+            width: 100%;
+            max-width: 400px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #f953c6, #00f5ff);
+            width: 35%;
+            border-radius: 3px;
+        }
+
+        .chat-area {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 400px;
+        }
+
+        .chat-message {
+            padding: 10px 15px;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            max-width: 85%;
+        }
+
+        .chat-message.reaction {
+            background: rgba(255, 107, 107, 0.2);
+            align-self: center;
+            font-size: 1.5rem;
+        }
+
+        .chat-message.text {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .chat-message.system {
+            background: rgba(0, 245, 255, 0.1);
+            font-size: 0.75rem;
+            align-self: center;
+            text-align: center;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            color: white;
+            outline: none;
+        }
+
+        .chat-input input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .reaction-bar {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            margin-bottom: 10px;
+        }
+
+        .reaction-btn {
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            padding: 5px 10px;
+            border-radius: 10px;
+        }
+
+        .reaction-btn:hover {
+            transform: scale(1.2);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .invite-section {
+            background: rgba(249, 83, 198, 0.1);
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+
+        .invite-link {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .invite-link input {
+            flex: 1;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: white;
+            font-size: 0.85rem;
+        }
+
+        .invite-link button {
+            padding: 8px 15px;
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .challenge-card {
+            background: rgba(0, 245, 255, 0.1);
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            border-left: 3px solid #00f5ff;
+        }
+
+        .challenge-card h4 {
+            margin-bottom: 8px;
+            color: #00f5ff;
+            font-size: 0.95rem;
+        }
+
+        .challenge-card p {
+            font-size: 0.8rem;
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+
+        .challenge-progress {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .challenge-progress .progress-bar {
+            flex: 1;
+            max-width: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 Watch Party Mode</h1>
+            <div>
+                <button class="control-btn" onclick="leaveParty()">Salir Party</button>
+                <button class="control-btn active" onclick="toggleSync()">Sync: ON</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <h3>👥 Participantes</h3>
+                
+                <div class="party-info">
+                    <h4>Infinity Saga Marathon</h4>
+                    <p>🎥 Avengers: Endgame</p>
+                    <p>⏱️ 1:23:45 / 2:18:00</p>
+                    <p>👥 4 de 6 conectados</p>
+                </div>
+
+                <div class="participant-list">
+                    <div class="participant">
+                        <div class="participant-avatar">👤</div>
+                        <div class="participant-info">
+                            <div class="participant-name">Tú (Host)</div>
+                            <div class="participant-status watching">Viendo</div>
+                        </div>
+                        <div class="sync-indicator"></div>
+                    </div>
+                    <div class="participant">
+                        <div class="participant-avatar">🦸</div>
+                        <div class="participant-info">
+                            <div class="participant-name">Maria_G</div>
+                            <div class="participant-status watching">Viendo</div>
+                        </div>
+                        <div class="sync-indicator"></div>
+                    </div>
+                    <div class="participant">
+                        <div class="participant-avatar">🧙</div>
+                        <div class="participant-info">
+                            <div class="participant-name">StrangeFan</div>
+                            <div class="participant-status online">En línea</div>
+                        </div>
+                    </div>
+                    <div class="participant">
+                        <div class="participant-avatar">🕷️</div>
+                        <div class="participant-info">
+                            <div class="participant-name">Spidey_Boy</div>
+                            <div class="participant-status watching">Viendo</div>
+                        </div>
+                        <div class="sync-indicator"></div>
+                    </div>
+                    <div class="participant">
+                        <div class="participant-avatar">🔴</div>
+                        <div class="participant-info">
+                            <div class="participant-name">DeadpoolLover</div>
+                            <div class="participant-status online">En línea</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="invite-section" style="margin-top: 20px;">
+                    <h4>📨 Invitar amigos</h4>
+                    <div class="invite-link">
+                        <input type="text" value="nexus.app/party/abc123" readonly>
+                        <button onclick="copyLink()">Copiar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="video-area">
+                <div class="video-placeholder">
+                    <button class="play-button" onclick="togglePlay()">▶</button>
+                    <h3>Avengers: Endgame</h3>
+                    <p>Sincronizado con 4 participantes</p>
+                </div>
+
+                <div class="video-controls">
+                    <button class="control-btn" onclick="skipBack()">-10s</button>
+                    <button class="control-btn" onclick="togglePlay()">⏸️ Pausar</button>
+                    <button class="control-btn" onclick="skipForward()">+10s</button>
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <span style="font-size: 0.85rem; opacity: 0.7;">1:23:45</span>
+                </div>
+
+                <div class="reaction-bar" style="margin-top: 20px;">
+                    <div class="reaction-btn" onclick="sendReaction('😮')">😮</div>
+                    <div class="reaction-btn" onclick="sendReaction('😂')">😂</div>
+                    <div class="reaction-btn" onclick="sendReaction('😢')">😢</div>
+                    <div class="reaction-btn" onclick="sendReaction('🔥')">🔥</div>
+                    <div class="reaction-btn" onclick="sendReaction('❤️')">❤️</div>
+                    <div class="reaction-btn" onclick="sendReaction('👏')">👏</div>
+                </div>
+            </div>
+
+            <div class="sidebar chat-area">
+                <h3>💬 Chat Party</h3>
+                
+                <div class="challenge-card">
+                    <h4>🏆 Challenge del Día</h4>
+                    <p>Completa Infinity Saga en 24h con amigos</p>
+                    <div class="challenge-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 67%;"></div>
+                        </div>
+                        <span style="font-size: 0.8rem;">67%</span>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="chat-message system">Maria_G se unió al party</div>
+                    <div class="chat-message text"><strong>Maria_G:</strong> ¡Esta escena es épica!</div>
+                    <div class="chat-message reaction">😮</div>
+                    <div class="chat-message text"><strong>StrangeFan:</strong> El portal scene...</div>
+                    <div class="chat-message reaction">🔥</div>
+                    <div class="chat-message text"><strong>Spidey_Boy:</strong> I am Iron Man 😢</div>
+                    <div class="chat-message reaction">❤️</div>
+                    <div class="chat-message system">DeadpoolLover se unió al party</div>
+                </div>
+
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="Escribe un mensaje..." onkeypress="handleChatKeypress(event)">
+                    <button class="control-btn" onclick="sendChat()">Enviar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isPlaying = false;
+        let syncEnabled = true;
+
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            const btn = document.querySelector('.play-button');
+            btn.textContent = isPlaying ? '⏸️' : '▶';
+            
+            // Add system message
+            if (isPlaying) {
+                addSystemMessage('Host reanudó la reproducción');
+            } else {
+                addSystemMessage('Host pausó la reproducción');
+            }
+        }
+
+        function skipBack() {
+            addSystemMessage('Host retrocedió 10 segundos');
+        }
+
+        function skipForward() {
+            addSystemMessage('Host avanzó 10 segundos');
+        }
+
+        function toggleSync() {
+            syncEnabled = !syncEnabled;
+            const btn = document.querySelector('.header .control-btn:last-child');
+            btn.textContent = syncEnabled ? 'Sync: ON' : 'Sync: OFF';
+            btn.classList.toggle('active');
+            
+            if (syncEnabled) {
+                addSystemMessage('Sincronización activada');
+            } else {
+                addSystemMessage('Sincronización desactivada');
+            }
+        }
+
+        function sendReaction(emoji) {
+            const chatMessages = document.getElementById('chatMessages');
+            const msg = document.createElement('div');
+            msg.className = 'chat-message reaction';
+            msg.textContent = emoji;
+            chatMessages.appendChild(msg);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            const chatMessages = document.getElementById('chatMessages');
+            const msg = document.createElement('div');
+            msg.className = 'chat-message text';
+            msg.innerHTML = `<strong>Tú:</strong> ${message}`;
+            chatMessages.appendChild(msg);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            input.value = '';
+        }
+
+        function handleChatKeypress(event) {
+            if (event.key === 'Enter') {
+                sendChat();
+            }
+        }
+
+        function addSystemMessage(text) {
+            const chatMessages = document.getElementById('chatMessages');
+            const msg = document.createElement('div');
+            msg.className = 'chat-message system';
+            msg.textContent = text;
+            chatMessages.appendChild(msg);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function copyLink() {
+            const input = document.querySelector('.invite-link input');
+            input.select();
+            document.execCommand('copy');
+            alert('¡Link copiado!');
+        }
+
+        function leaveParty() {
+            if (confirm('¿Estás seguro de que quieres salir del watch party?')) {
+                alert('Saliendo del party...');
+            }
+        }
+
+        // Simulate incoming reactions
+        setInterval(() => {
+            if (Math.random() > 0.7) {
+                const reactions = ['😮', '😂', '🔥', '❤️', '👏'];
+                const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
+                sendReaction(randomReaction);
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

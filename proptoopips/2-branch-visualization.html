@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Branch Visualization - Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            overflow: hidden;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(90deg, #f093fb, #f5576c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .controls button {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .controls button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .branch-container {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+            padding: 40px;
+        }
+
+        .branch-tree {
+            position: relative;
+            min-width: 1200px;
+            min-height: 800px;
+        }
+
+        .main-timeline {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(180deg, #f093fb, #f5576c, #4facfe);
+            transform: translateX(-50%);
+            box-shadow: 0 0 20px rgba(240, 147, 251, 0.5);
+        }
+
+        .branch {
+            position: absolute;
+            height: 3px;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            transform-origin: left center;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-radius: 2px;
+        }
+
+        .branch:hover {
+            height: 5px;
+            box-shadow: 0 0 15px rgba(79, 172, 254, 0.7);
+        }
+
+        .branch.alternate {
+            background: linear-gradient(90deg, #fa709a, #fee140);
+        }
+
+        .branch.convergence {
+            background: linear-gradient(90deg, #a8edea, #fed6e3);
+        }
+
+        .decision-point {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, #fff, #f093fb);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 0 15px rgba(240, 147, 251, 0.7);
+            z-index: 10;
+        }
+
+        .decision-point:hover {
+            transform: translate(-50%, -50%) scale(1.5);
+            box-shadow: 0 0 25px rgba(240, 147, 251, 0.9);
+        }
+
+        .decision-point.active {
+            background: radial-gradient(circle, #f5576c, #f093fb);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(245, 87, 108, 0.7); }
+            50% { box-shadow: 0 0 30px rgba(245, 87, 108, 0.9); }
+        }
+
+        .timeline-event {
+            position: absolute;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            max-width: 200px;
+        }
+
+        .timeline-event:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .timeline-event h4 {
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            color: #f093fb;
+        }
+
+        .timeline-event p {
+            font-size: 0.7rem;
+            opacity: 0.8;
+        }
+
+        .timeline-event.main {
+            background: linear-gradient(135deg, rgba(240, 147, 251, 0.2), rgba(245, 87, 108, 0.2));
+            border-color: #f093fb;
+        }
+
+        .timeline-event.alternate {
+            background: linear-gradient(135deg, rgba(250, 112, 154, 0.2), rgba(254, 225, 64, 0.2));
+            border-color: #fa709a;
+        }
+
+        .branch-label {
+            position: absolute;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.7);
+            transform: rotate(-45deg);
+            white-space: nowrap;
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 350px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .info-panel.visible {
+            opacity: 1;
+        }
+
+        .info-panel h3 {
+            margin-bottom: 10px;
+            color: #f093fb;
+        }
+
+        .info-panel p {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            line-height: 1.4;
+        }
+
+        .info-panel .probability {
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(240, 147, 251, 0.2);
+            border-radius: 8px;
+            font-size: 0.8rem;
+        }
+
+        .legend {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .legend-line {
+            width: 30px;
+            height: 3px;
+            margin-right: 10px;
+            border-radius: 2px;
+        }
+
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .zoom-controls button {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            transition: all 0.3s;
+        }
+
+        .zoom-controls button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .scenario-selector {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+        }
+
+        .scenario-selector select {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px;
+            border-radius: 5px;
+            width: 200px;
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0.5;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔀 Multiverse Branch Visualization</h1>
+            <div class="controls">
+                <button onclick="resetView()">Reset View</button>
+                <button onclick="showAllBranches()">Show All</button>
+                <button onclick="highlightMain()">Main Timeline</button>
+            </div>
+        </div>
+
+        <div class="branch-container">
+            <div class="branch-tree" id="branchTree">
+                <div class="main-timeline"></div>
+                
+                <!-- Decision points and branches will be added by JavaScript -->
+            </div>
+
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-line" style="background: linear-gradient(90deg, #f093fb, #f5576c);"></div>
+                    <span>Main Timeline</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line" style="background: linear-gradient(90deg, #4facfe, #00f2fe);"></div>
+                    <span>Branch Point</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line" style="background: linear-gradient(90deg, #fa709a, #fee140);"></div>
+                    <span>Alternate Reality</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line" style="background: linear-gradient(90deg, #a8edea, #fed6e3);"></div>
+                    <span>Convergence Point</span>
+                </div>
+            </div>
+
+            <div class="scenario-selector">
+                <label>Scenario:</label>
+                <select onchange="changeScenario(this.value)">
+                    <option value="avengers">Avengers Timeline</option>
+                    <option value="spiderman">Spider-Man Branches</option>
+                    <option value="xmen">X-Men Multiverse</option>
+                </select>
+            </div>
+
+            <div class="zoom-controls">
+                <button onclick="zoomIn()">+</button>
+                <button onclick="zoomOut()">−</button>
+            </div>
+
+            <div class="instructions">
+                Click decision points to explore branches • Hover events for details
+            </div>
+
+            <div class="info-panel" id="infoPanel">
+                <h3 id="infoTitle">Title</h3>
+                <p id="infoDescription">Description</p>
+                <div class="probability" id="infoProbability"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const scenarios = {
+            avengers: {
+                events: [
+                    { id: 1, title: "Iron Man", year: 2008, x: 50, y: 50, type: "main", description: "Tony Stark crea Iron Man" },
+                    { id: 2, title: "The Avengers", year: 2012, x: 50, y: 150, type: "main", description: "Los Vengadores se unen" },
+                    { id: 3, title: "Civil War", year: 2016, x: 50, y: 250, type: "main", description: "Guerra Civil entre héroes" },
+                    { id: 4, title: "Infinity War", year: 2018, x: 50, y: 350, type: "main", description: "Thanos llega" },
+                    { id: 5, title: "Endgame", year: 2019, x: 50, y: 450, type: "main", description: "El Snapt y su reverso" },
+                ],
+                decisionPoints: [
+                    { id: 1, x: 50, y: 150, title: "New York Invasion", branches: [
+                        { angle: -30, length: 150, label: "Lose Invasion", events: [{ title: "Dark Timeline", description: "Thanos gana en 2012", type: "alternate" }] },
+                        { angle: 30, length: 150, label: "Win Invasion", events: [{ title: "Prime Timeline", description: "Nuestra realidad principal", type: "main" }] }
+                    ]},
+                    { id: 2, x: 50, y: 350, title: "Thanos Snap", branches: [
+                        { angle: -45, length: 180, label: "No Snap", events: [{ title: "No Snap Timeline", description: "Thanos es detenido a tiempo", type: "alternate" }] },
+                        { angle: 45, length: 180, label: "Snap Happens", events: [{ title: "Snap Timeline", description: "El universo pierde la mitad", type: "main" }] }
+                    ]}
+                ]
+            },
+            spiderman: {
+                events: [
+                    { id: 1, title: "Spider-Man 2002", year: 2002, x: 50, y: 50, type: "main", description: "Tobey Maguire" },
+                    { id: 2, title: "Amazing Spider-Man", year: 2012, x: 50, y: 150, type: "main", description: "Andrew Garfield" },
+                    { id: 3, title: "MCU Spider-Man", year: 2016, x: 50, y: 250, type: "main", description: "Tom Holland" },
+                    { id: 4, title: "No Way Home", year: 2021, x: 50, y: 350, type: "main", description: "Los tres Spider-Man" },
+                ],
+                decisionPoints: [
+                    { id: 1, x: 50, y: 250, title: "Multiverse Spell", branches: [
+                        { angle: -60, length: 200, label: "Spell Works", events: [{ title: "No Multiverse", description: "Peter es olvidado normalmente", type: "alternate" }] },
+                        { angle: 0, length: 200, label: "Spell Interrupted", events: [{ title: "Multiverse Opens", description: "Villains y héroes llegan", type: "main" }] },
+                        { angle: 60, length: 200, label: "Spell Backfires", events: [{ title: "Chaos Timeline", description: "El multiverso colapsa", type: "alternate" }] }
+                    ]}
+                ]
+            },
+            xmen: {
+                events: [
+                    { id: 1, title: "X-Men 2000", year: 2000, x: 50, y: 50, type: "main", description: "Primer equipo X-Men" },
+                    { id: 2, title: "Days of Future Past", year: 2014, x: 50, y: 150, type: "main", description: "Viaje en el tiempo" },
+                    { id: 3, title: "Logan", year: 2017, x: 50, y: 250, type: "main", description: "El final de Wolverine" },
+                    { id: 4, title: "Deadpool 3", year: 2024, x: 50, y: 350, type: "main", description: "Deadpool en el MCU" },
+                ],
+                decisionPoints: [
+                    { id: 1, x: 50, y: 150, title: "Time Travel", branches: [
+                        { angle: -30, length: 160, label: "Past Changed", events: [{ title: "New Timeline", description: "El pasado es alterado", type: "main" }] },
+                        { angle: 30, length: 160, label: "Past Unchanged", events: [{ title: "Original Timeline", description: "La línea temporal original", type: "alternate" }] }
+                    ]}
+                ]
+            }
+        };
+
+        let currentScenario = 'avengers';
+        let zoom = 1;
+        const branchTree = document.getElementById('branchTree');
+        const infoPanel = document.getElementById('infoPanel');
+        const infoTitle = document.getElementById('infoTitle');
+        const infoDescription = document.getElementById('infoDescription');
+        const infoProbability = document.getElementById('infoProbability');
+
+        function renderScenario(scenarioKey) {
+            const scenario = scenarios[scenarioKey];
+            
+            // Clear existing branches and events (keep main timeline)
+            const existingElements = branchTree.querySelectorAll('.branch, .decision-point, .timeline-event, .branch-label');
+            existingElements.forEach(el => el.remove());
+
+            // Render events
+            scenario.events.forEach(event => {
+                const eventEl = document.createElement('div');
+                eventEl.className = `timeline-event ${event.type}`;
+                eventEl.style.left = event.type === 'main' ? 'calc(50% + 30px)' : 'auto';
+                eventEl.style.right = event.type === 'main' ? 'auto' : 'calc(50% - 230px)';
+                eventEl.style.top = `${event.y}px`;
+                eventEl.innerHTML = `
+                    <h4>${event.title}</h4>
+                    <p>${event.description}</p>
+                `;
+                eventEl.addEventListener('click', () => showEventInfo(event));
+                branchTree.appendChild(eventEl);
+            });
+
+            // Render decision points and branches
+            scenario.decisionPoints.forEach(dp => {
+                const dpEl = document.createElement('div');
+                dpEl.className = 'decision-point';
+                dpEl.style.left = `${dp.x}%`;
+                dpEl.style.top = `${dp.y}px`;
+                dpEl.title = dp.title;
+                dpEl.addEventListener('click', () => showDecisionInfo(dp));
+                branchTree.appendChild(dpEl);
+
+                dp.branches.forEach(branch => {
+                    const branchEl = document.createElement('div');
+                    branchEl.className = 'branch';
+                    if (branch.events.some(e => e.type === 'alternate')) {
+                        branchEl.classList.add('alternate');
+                    }
+                    
+                    const angleRad = branch.angle * (Math.PI / 180);
+                    const endX = dp.x + Math.cos(angleRad) * branch.length;
+                    const endY = dp.y + Math.sin(angleRad) * branch.length;
+                    
+                    branchEl.style.left = `${dp.x}%`;
+                    branchEl.style.top = `${dp.y}px`;
+                    branchEl.style.width = `${branch.length}px`;
+                    branchEl.style.transform = `rotate(${branch.angle}deg)`;
+                    
+                    branchEl.addEventListener('click', () => showBranchInfo(branch));
+                    branchTree.appendChild(branchEl);
+
+                    // Branch label
+                    const labelEl = document.createElement('div');
+                    labelEl.className = 'branch-label';
+                    labelEl.style.left = `${endX}%`;
+                    labelEl.style.top = `${endY}px`;
+                    labelEl.textContent = branch.label;
+                    branchTree.appendChild(labelEl);
+
+                    // Branch events
+                    branch.events.forEach((event, idx) => {
+                        const eventEl = document.createElement('div');
+                        eventEl.className = `timeline-event ${event.type}`;
+                        const eventX = endX + (idx * 5);
+                        const eventY = endY + 30;
+                        eventEl.style.left = `${eventX}%`;
+                        eventEl.style.top = `${eventY}px`;
+                        eventEl.innerHTML = `
+                            <h4>${event.title}</h4>
+                            <p>${event.description}</p>
+                        `;
+                        eventEl.addEventListener('click', () => showEventInfo(event));
+                        branchTree.appendChild(eventEl);
+                    });
+                });
+            });
+        }
+
+        function showEventInfo(event) {
+            infoTitle.textContent = event.title;
+            infoDescription.textContent = event.description;
+            infoProbability.textContent = event.type === 'main' ? 'Probability: 100% (Prime Timeline)' : 'Probability: <1% (Alternate Reality)';
+            infoPanel.classList.add('visible');
+        }
+
+        function showDecisionInfo(dp) {
+            infoTitle.textContent = dp.title;
+            infoDescription.textContent = `Punto de decisión con ${dp.branches.length} posibles realidades.`;
+            infoProbability.textContent = 'Critical Nexus Point';
+            infoPanel.classList.add('visible');
+        }
+
+        function showBranchInfo(branch) {
+            infoTitle.textContent = branch.label;
+            infoDescription.textContent = branch.events[0].description;
+            infoProbability.textContent = branch.events[0].type === 'main' ? 'Probability: 100% (Prime Timeline)' : 'Probability: <1% (Alternate Reality)';
+            infoPanel.classList.add('visible');
+        }
+
+        function changeScenario(value) {
+            currentScenario = value;
+            renderScenario(value);
+        }
+
+        function resetView() {
+            zoom = 1;
+            branchTree.style.transform = `scale(${zoom})`;
+        }
+
+        function showAllBranches() {
+            document.querySelectorAll('.branch').forEach(b => b.style.opacity = '1');
+        }
+
+        function highlightMain() {
+            document.querySelectorAll('.branch').forEach(b => {
+                b.style.opacity = b.classList.contains('alternate') ? '0.3' : '1';
+            });
+        }
+
+        function zoomIn() {
+            zoom = Math.min(zoom + 0.2, 2);
+            branchTree.style.transform = `scale(${zoom})`;
+        }
+
+        function zoomOut() {
+            zoom = Math.max(zoom - 0.2, 0.5);
+            branchTree.style.transform = `scale(${zoom})`;
+        }
+
+        // Click outside to hide info
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.timeline-event') && !e.target.closest('.decision-point') && !e.target.closest('.branch') && !e.target.closest('.info-panel')) {
+                infoPanel.classList.remove('visible');
+            }
+        });
+
+        // Initialize
+        renderScenario(currentScenario);
+    </script>
+</body>
+</html>

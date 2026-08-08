@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character Journey Tracking - Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            overflow: hidden;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(90deg, #f953c6, #00f5ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .controls button {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .controls button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .character-selector {
+            display: flex;
+            gap: 15px;
+            padding: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .character-card {
+            width: 100px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .character-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .character-card.active {
+            border-color: #f953c6;
+            box-shadow: 0 0 20px rgba(249, 83, 198, 0.5);
+            background: rgba(249, 83, 198, 0.2);
+        }
+
+        .character-avatar {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .character-name {
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .main-content {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .journey-container {
+            position: relative;
+            height: 100%;
+            padding: 40px;
+            overflow: auto;
+        }
+
+        .journey-timeline {
+            position: relative;
+            min-height: 600px;
+        }
+
+        .journey-path {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(180deg, #f953c6, #00f5ff, #f953c6);
+            transform: translateX(-50%);
+            box-shadow: 0 0 20px rgba(249, 83, 198, 0.5);
+        }
+
+        .journey-event {
+            position: absolute;
+            width: 300px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            left: 50%;
+        }
+
+        .journey-event:hover {
+            transform: scale(1.05);
+            background: rgba(255, 255, 255, 0.15);
+            border-color: #f953c6;
+        }
+
+        .journey-event.left {
+            transform: translateX(-110%);
+        }
+
+        .journey-event.right {
+            transform: translateX(10%);
+        }
+
+        .journey-event:hover.left {
+            transform: translateX(-110%) scale(1.05);
+        }
+
+        .journey-event:hover.right {
+            transform: translateX(10%) scale(1.05);
+        }
+
+        .journey-event.universe-mcu {
+            border-left: 4px solid #ff6b6b;
+        }
+
+        .journey-event.universe-sony {
+            border-left: 4px solid #9b59b6;
+        }
+
+        .journey-event.universe-fox {
+            border-left: 4px solid #3498db;
+        }
+
+        .journey-event.universe-animation {
+            border-left: 4px solid #1abc9c;
+        }
+
+        .journey-event h4 {
+            font-size: 1rem;
+            margin-bottom: 8px;
+            color: #f953c6;
+        }
+
+        .journey-event .year {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-bottom: 8px;
+        }
+
+        .journey-event p {
+            font-size: 0.85rem;
+            opacity: 0.8;
+            line-height: 1.4;
+        }
+
+        .journey-event .universe-tag {
+            display: inline-block;
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            font-size: 0.7rem;
+            margin-top: 10px;
+        }
+
+        .journey-node {
+            position: absolute;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, #f953c6, #00f5ff);
+            border-radius: 50%;
+            transform: translateX(-50%);
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 0 15px rgba(249, 83, 198, 0.7);
+            z-index: 10;
+        }
+
+        .journey-node:hover {
+            transform: translateX(-50%) scale(1.5);
+            box-shadow: 0 0 25px rgba(249, 83, 198, 0.9);
+        }
+
+        .connection-line {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(249, 83, 198, 0.5), rgba(0, 245, 255, 0.5));
+            transform-origin: left center;
+            pointer-events: none;
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 350px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .info-panel.visible {
+            opacity: 1;
+        }
+
+        .info-panel h3 {
+            margin-bottom: 10px;
+            color: #f953c6;
+        }
+
+        .info-panel p {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            line-height: 1.4;
+        }
+
+        .stats-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+        }
+
+        .stats-panel h4 {
+            margin-bottom: 10px;
+            color: #00f5ff;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .legend {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            border-radius: 3px;
+            margin-right: 10px;
+        }
+
+        .timeline-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+
+        .timeline-controls button {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .timeline-controls button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0.5;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+
+        .progress-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #f953c6, #00f5ff);
+            transition: width 0.3s;
+        }
+
+        .character-details {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .character-details h2 {
+            margin-bottom: 5px;
+            color: #f953c6;
+        }
+
+        .character-details .subtitle {
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+        
+        <div class="header">
+            <h1>🎭 Character Journey Tracking</h1>
+            <div class="controls">
+                <button onclick="resetView()">Reset View</button>
+                <button onclick="toggleConnections()">Toggle Connections</button>
+                <button onclick="playJourney()">▶️ Play Journey</button>
+            </div>
+        </div>
+
+        <div class="character-selector">
+            <div class="character-card active" onclick="selectCharacter('ironman')">
+                <div class="character-avatar">🦾</div>
+                <div class="character-name">Iron Man</div>
+            </div>
+            <div class="character-card" onclick="selectCharacter('spiderman')">
+                <div class="character-avatar">🕷️</div>
+                <div class="character-name">Spider-Man</div>
+            </div>
+            <div class="character-card" onclick="selectCharacter('wolverine')">
+                <div class="character-avatar">🐺</div>
+                <div class="character-name">Wolverine</div>
+            </div>
+            <div class="character-card" onclick="selectCharacter('deadpool')">
+                <div class="character-avatar">🔴</div>
+                <div class="character-name">Deadpool</div>
+            </div>
+            <div class="character-card" onclick="selectCharacter('captainamerica')">
+                <div class="character-avatar">🛡️</div>
+                <div class="character-name">Cap. America</div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="journey-container">
+                <div class="journey-timeline" id="journeyTimeline">
+                    <div class="journey-path"></div>
+                    
+                    <!-- Journey events will be added by JavaScript -->
+                </div>
+
+                <div class="character-details" id="characterDetails">
+                    <h2 id="charName">Iron Man</h2>
+                    <div class="subtitle" id="charSubtitle">Tony Stark - MCU</div>
+                </div>
+
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #ff6b6b;"></div>
+                        <span>MCU</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #9b59b6;"></div>
+                        <span>Sony</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #3498db;"></div>
+                        <span>Fox</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #1abc9c;"></div>
+                        <span>Animation</span>
+                    </div>
+                </div>
+
+                <div class="stats-panel" id="statsPanel">
+                    <h4>Journey Statistics</h4>
+                    <div class="stat-item">
+                        <span>Total Appearances:</span>
+                        <span id="statAppearances">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Universes Visited:</span>
+                        <span id="statUniverses">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Years Active:</span>
+                        <span id="statYears">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Key Moments:</span>
+                        <span id="statMoments">0</span>
+                    </div>
+                </div>
+
+                <div class="timeline-controls">
+                    <button onclick="previousEvent()">← Previous</button>
+                    <button onclick="nextEvent()">Next →</button>
+                </div>
+
+                <div class="instructions">
+                    Click events for details • Use arrows to navigate • Play for auto-journey
+                </div>
+
+                <div class="info-panel" id="infoPanel">
+                    <h3 id="infoTitle">Title</h3>
+                    <p id="infoDescription">Description</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const characterJourneys = {
+            ironman: {
+                name: "Iron Man",
+                subtitle: "Tony Stark - MCU",
+                events: [
+                    { id: 1, title: "Iron Man", year: 2008, universe: "mcu", description: "Tony Stark crea el traje de Iron Man y se convierte en superhéroe.", position: 50 },
+                    { id: 2, title: "Iron Man 2", year: 2010, universe: "mcu", description: "Stark lucha contra problemas de gobierno y nuevos enemigos.", position: 120 },
+                    { id: 3, title: "The Avengers", year: 2012, universe: "mcu", description: "Tony se une a los Vengadores para defender Nueva York.", position: 190 },
+                    { id: 4, title: "Iron Man 3", year: 2013, universe: "mcu", description: "Stark enfrenta ansiedad post-traumática y el Mandarin.", position: 260 },
+                    { id: 5, title: "Age of Ultron", year: 2015, universe: "mcu", description: "Tony crea Ultron, lo que lleva a la formación de los nuevos Vengadores.", position: 330 },
+                    { id: 6, title: "Civil War", year: 2016, universe: "mcu", description: "Tony se enfrenta a Capitán América sobre los Acuerdos de Sokovia.", position: 400 },
+                    { id: 7, title: "Infinity War", year: 2018, universe: "mcu", description: "Tony lucha contra Thanos en el espacio.", position: 470 },
+                    { id: 8, title: "Endgame", year: 2019, universe: "mcu", description: "El sacrificio final de Tony para salvar el universo.", position: 540 }
+                ]
+            },
+            spiderman: {
+                name: "Spider-Man",
+                subtitle: "Peter Parker - Multi-verse",
+                events: [
+                    { id: 1, title: "Spider-Man 2002", year: 2002, universe: "sony", description: "Tobey Maguide como el primer Spider-Man cinematográfico.", position: 50 },
+                    { id: 2, title: "Spider-Man 2", year: 2004, universe: "sony", description: "Peter lucha con su doble vida y el Doc Ock.", position: 120 },
+                    { id: 3, title: "Spider-Man 3", year: 2007, universe: "sony", description: "Peter enfrenta el simbionte y múltiples villanos.", position: 190 },
+                    { id: 4, title: "Amazing Spider-Man", year: 2012, universe: "sony", description: "Andrew Garfield toma el rol con una nueva visión.", position: 260 },
+                    { id: 5, title: "MCU Debut", year: 2016, universe: "mcu", description: "Tom Holland se une al MCU en Civil War.", position: 330 },
+                    { id: 6, title: "Homecoming", year: 2017, universe: "mcu", description: "Primera película solista de Spider-Man en el MCU.", position: 400 },
+                    { id: 7, title: "Into the Spider-Verse", year: 2018, universe: "animation", description: "Miles Morales entra en el multiverso animado.", position: 470 },
+                    { id: 8, title: "No Way Home", year: 2021, universe: "sony", description: "Los tres Spider-Man se unen en el multiverso.", position: 540 }
+                ]
+            },
+            wolverine: {
+                name: "Wolverine",
+                subtitle: "Logan - Fox/MCU",
+                events: [
+                    { id: 1, title: "X-Men", year: 2000, universe: "fox", description: "Logan se une a los X-Men de Charles Xavier.", position: 50 },
+                    { id: 2, title: "X2", year: 2003, universe: "fox", description: "Logan descubre más sobre su pasado en Stryker.", position: 120 },
+                    { id: 3, title: "X-Men: Last Stand", year: 2006, universe: "fox", description: "Logan enfrenta la cura mutante y el Fénix.", position: 190 },
+                    { id: 4, title: "X-Men Origins", year: 2009, universe: "fox", description: "El origen de Wolverine y Weapon X.", position: 260 },
+                    { id: 5, title: "First Class", year: 2011, universe: "fox", description: "Logan hace un cameo en la década de 1960.", position: 330 },
+                    { id: 6, title: "Days of Future Past", year: 2014, universe: "fox", description: "Logan viaja en el tiempo para cambiar el futuro.", position: 400 },
+                    { id: 7, title: "Logan", year: 2017, universe: "fox", description: "El final del viaje de Wolverine en un futuro distópico.", position: 470 },
+                    { id: 8, title: "Deadpool 3", year: 2024, universe: "mcu", description: "Logan regresa en el MCU junto a Deadpool.", position: 540 }
+                ]
+            },
+            deadpool: {
+                name: "Deadpool",
+                subtitle: "Wade Wilson - Fox/MCU",
+                events: [
+                    { id: 1, title: "X-Men Origins", year: 2009, universe: "fox", description: "Primera aparición de Deadpool (versión alterada).", position: 50 },
+                    { id: 2, title: "Deadpool", year: 2016, universe: "fox", description: "El verdadero debut de Wade Wilson como anti-héroe.", position: 120 },
+                    { id: 3, title: "Deadpool 2", year: 2018, universe: "fox", description: "Deadpool forma X-Force y viaja en el tiempo.", position: 190 },
+                    { id: 4, title: "Once Upon a Deadpool", year: 2018, universe: "fox", description: "Versión familiar de Deadpool 2.", position: 260 },
+                    { id: 5, title: "Spider-Verse Cameo", year: 2023, universe: "animation", description: "Aparición en Across the Spider-Verse.", position: 330 },
+                    { id: 6, title: "Deadpool 3", year: 2024, universe: "mcu", description: "Deadpool entra oficialmente en el MCU.", position: 400 }
+                ]
+            },
+            captainamerica: {
+                name: "Captain America",
+                subtitle: "Steve Rogers - MCU",
+                events: [
+                    { id: 1, title: "The First Avenger", year: 2011, universe: "mcu", description: "Steve Rogers se convierte en Capitán América en WWII.", position: 50 },
+                    { id: 2, title: "The Avengers", year: 2012, universe: "mcu", description: "Steve lidera a los Vengadores en la batalla de NY.", position: 120 },
+                    { id: 3, title: "Winter Soldier", year: 2014, universe: "mcu", description: "Steve descubre la conspiración de Hydra dentro de S.H.I.E.L.D.", position: 190 },
+                    { id: 4, title: "Civil War", year: 2016, universe: "mcu", description: "Steve se enfrenta a Tony sobre los Acuerdos.", position: 260 },
+                    { id: 5, title: "Infinity War", year: 2018, universe: "mcu", description: "Steve lidera la resistencia en Wakanda.", position: 330 },
+                    { id: 6, title: "Endgame", year: 2019, universe: "mcu", description: "Steve lidera el Viaje en el Tiempo y el Asalto Final.", position: 400 },
+                    { id: 7, title: "Falcon & Winter Soldier", year: 2021, universe: "mcu", description: "Steve pasa el escudo a Sam Wilson.", position: 470 }
+                ]
+            }
+        };
+
+        let currentCharacter = 'ironman';
+        let currentEventIndex = 0;
+        let showConnections = true;
+        let isPlaying = false;
+        let playInterval;
+
+        const journeyTimeline = document.getElementById('journeyTimeline');
+        const infoPanel = document.getElementById('infoPanel');
+        const infoTitle = document.getElementById('infoTitle');
+        const infoDescription = document.getElementById('infoDescription');
+        const progressBar = document.getElementById('progressBar');
+
+        function selectCharacter(characterId) {
+            currentCharacter = characterId;
+            currentEventIndex = 0;
+            
+            // Update UI
+            document.querySelectorAll('.character-card').forEach(card => card.classList.remove('active'));
+            document.querySelector(`.character-card[onclick="selectCharacter('${characterId}')"]`).classList.add('active');
+            
+            // Update character details
+            const journey = characterJourneys[characterId];
+            document.getElementById('charName').textContent = journey.name;
+            document.getElementById('charSubtitle').textContent = journey.subtitle;
+            
+            // Render journey
+            renderJourney(journey);
+            updateStats(journey);
+        }
+
+        function renderJourney(journey) {
+            // Clear existing events (keep path)
+            const existingEvents = journeyTimeline.querySelectorAll('.journey-event, .journey-node, .connection-line');
+            existingEvents.forEach(el => el.remove());
+
+            journey.events.forEach((event, index) => {
+                // Create node
+                const node = document.createElement('div');
+                node.className = 'journey-node';
+                node.style.top = `${event.position}px`;
+                node.title = event.title;
+                node.addEventListener('click', () => showEventInfo(event));
+                journeyTimeline.appendChild(node);
+
+                // Create event card
+                const eventCard = document.createElement('div');
+                eventCard.className = `journey-event ${index % 2 === 0 ? 'left' : 'right'} universe-${event.universe}`;
+                eventCard.style.top = `${event.position - 40}px`;
+                eventCard.innerHTML = `
+                    <h4>${event.title}</h4>
+                    <div class="year">${event.year}</div>
+                    <p>${event.description}</p>
+                    <span class="universe-tag">${event.universe.toUpperCase()}</span>
+                `;
+                eventCard.addEventListener('click', () => showEventInfo(event));
+                journeyTimeline.appendChild(eventCard);
+
+                // Create connection line
+                if (showConnections && index < journey.events.length - 1) {
+                    const line = document.createElement('div');
+                    line.className = 'connection-line';
+                    const currentEvent = journey.events[index];
+                    const nextEvent = journey.events[index + 1];
+                    const length = Math.sqrt(Math.pow(0, 2) + Math.pow(nextEvent.position - currentEvent.position, 2));
+                    const angle = 90;
+                    
+                    line.style.left = '50%';
+                    line.style.top = `${currentEvent.position}px`;
+                    line.style.width = `${length}px`;
+                    line.style.transform = `rotate(${angle}deg)`;
+                    journeyTimeline.appendChild(line);
+                }
+            });
+
+            updateProgress();
+        }
+
+        function showEventInfo(event) {
+            infoTitle.textContent = event.title;
+            infoDescription.textContent = event.description;
+            infoPanel.classList.add('visible');
+        }
+
+        function updateStats(journey) {
+            const universes = [...new Set(journey.events.map(e => e.universe))];
+            const years = journey.events.map(e => e.year);
+            const yearSpan = Math.max(...years) - Math.min(...years);
+
+            document.getElementById('statAppearances').textContent = journey.events.length;
+            document.getElementById('statUniverses').textContent = universes.length;
+            document.getElementById('statYears').textContent = yearSpan;
+            document.getElementById('statMoments').textContent = journey.events.filter(e => e.description.includes('sacrif') || e.description.includes('final')).length;
+        }
+
+        function updateProgress() {
+            const journey = characterJourneys[currentCharacter];
+            const progress = ((currentEventIndex + 1) / journey.events.length) * 100;
+            progressBar.style.width = `${progress}%`;
+        }
+
+        function nextEvent() {
+            const journey = characterJourneys[currentCharacter];
+            if (currentEventIndex < journey.events.length - 1) {
+                currentEventIndex++;
+                showEventInfo(journey.events[currentEventIndex]);
+                updateProgress();
+                
+                // Scroll to event
+                const event = journey.events[currentEventIndex];
+                document.querySelector('.journey-container').scrollTo({
+                    top: event.position - 200,
+                    behavior: 'smooth'
+                });
+            }
+        }
+
+        function previousEvent() {
+            if (currentEventIndex > 0) {
+                currentEventIndex--;
+                const journey = characterJourneys[currentCharacter];
+                showEventInfo(journey.events[currentEventIndex]);
+                updateProgress();
+                
+                const event = journey.events[currentEventIndex];
+                document.querySelector('.journey-container').scrollTo({
+                    top: event.position - 200,
+                    behavior: 'smooth'
+                });
+            }
+        }
+
+        function resetView() {
+            currentEventIndex = 0;
+            const journey = characterJourneys[currentCharacter];
+            showEventInfo(journey.events[0]);
+            updateProgress();
+            document.querySelector('.journey-container').scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function toggleConnections() {
+            showConnections = !showConnections;
+            const journey = characterJourneys[currentCharacter];
+            renderJourney(journey);
+        }
+
+        function playJourney() {
+            if (isPlaying) {
+                clearInterval(playInterval);
+                isPlaying = false;
+                document.querySelector('.timeline-controls button:last-child').textContent = '▶️ Play Journey';
+            } else {
+                isPlaying = true;
+                document.querySelector('.timeline-controls button:last-child').textContent = '⏸️ Pause';
+                playInterval = setInterval(() => {
+                    const journey = characterJourneys[currentCharacter];
+                    if (currentEventIndex < journey.events.length - 1) {
+                        nextEvent();
+                    } else {
+                        clearInterval(playInterval);
+                        isPlaying = false;
+                        document.querySelector('.timeline-controls button:last-child').textContent = '▶️ Play Journey';
+                    }
+                }, 2000);
+            }
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') nextEvent();
+            if (e.key === 'ArrowUp') previousEvent();
+            if (e.key === ' ') {
+                e.preventDefault();
+                playJourney();
+            }
+        });
+
+        // Click outside to hide info
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.journey-event') && !e.target.closest('.journey-node') && !e.target.closest('.info-panel')) {
+                infoPanel.classList.remove('visible');
+            }
+        });
+
+        // Initialize
+        selectCharacter('ironman');
+    </script>
+</body>
+</html>

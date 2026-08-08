@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Search - Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(90deg, #f953c6, #00f5ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .search-container {
+            padding: 30px;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .main-search {
+            position: relative;
+            margin-bottom: 30px;
+        }
+
+        .main-search input {
+            width: 100%;
+            padding: 20px 60px 20px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 30px;
+            color: white;
+            font-size: 1.1rem;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .main-search input:focus {
+            border-color: #f953c6;
+            box-shadow: 0 0 20px rgba(249, 83, 198, 0.3);
+        }
+
+        .main-search input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 25px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .filters-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .filters-section h3 {
+            margin-bottom: 20px;
+            color: #f953c6;
+            font-size: 1.1rem;
+        }
+
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            color: white;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .filter-group select:focus,
+        .filter-group input:focus {
+            border-color: #00f5ff;
+        }
+
+        .filter-group option {
+            background: #1a1a2e;
+        }
+
+        .quick-filters {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .quick-filter {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.85rem;
+        }
+
+        .quick-filter:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .quick-filter.active {
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+            border: none;
+        }
+
+        .results-section {
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 0 30px;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .results-count {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .sort-dropdown {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            color: white;
+            cursor: pointer;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .result-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .result-card:hover {
+            transform: translateY(-5px);
+            border-color: #f953c6;
+            box-shadow: 0 10px 30px rgba(249, 83, 198, 0.3);
+        }
+
+        .result-poster {
+            width: 100%;
+            aspect-ratio: 2/3;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+        }
+
+        .result-info {
+            padding: 15px;
+        }
+
+        .result-info h4 {
+            font-size: 0.95rem;
+            margin-bottom: 5px;
+        }
+
+        .result-info p {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-bottom: 8px;
+        }
+
+        .result-tags {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .result-tag {
+            padding: 3px 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            font-size: 0.7rem;
+        }
+
+        .result-tag.mcu {
+            background: rgba(255, 107, 107, 0.3);
+        }
+
+        .result-tag.sony {
+            background: rgba(155, 89, 182, 0.3);
+        }
+
+        .result-tag.fox {
+            background: rgba(52, 152, 219, 0.3);
+        }
+
+        .search-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 15px;
+            margin-top: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+            z-index: 100;
+        }
+
+        .search-suggestions.visible {
+            display: block;
+        }
+
+        .suggestion-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .suggestion-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .suggestion-item .icon {
+            font-size: 1.2rem;
+        }
+
+        .suggestion-item .text {
+            flex: 1;
+        }
+
+        .suggestion-item .category {
+            font-size: 0.75rem;
+            opacity: 0.5;
+        }
+
+        .voice-search {
+            position: absolute;
+            right: 60px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.2rem;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.5);
+            transition: all 0.3s;
+        }
+
+        .voice-search:hover {
+            color: #f953c6;
+        }
+
+        .voice-search.recording {
+            color: #f5576c;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .advanced-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+
+        .advanced-toggle input {
+            display: none;
+        }
+
+        .advanced-toggle .toggle-switch {
+            width: 50px;
+            height: 26px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 13px;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .advanced-toggle .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+
+        .advanced-toggle input:checked + .toggle-switch {
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+        }
+
+        .advanced-toggle input:checked + .toggle-switch::after {
+            left: 27px;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            opacity: 0.7;
+        }
+
+        .no-results h3 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: #f953c6;
+        }
+
+        .no-results p {
+            margin-bottom: 20px;
+        }
+
+        .no-results button {
+            padding: 12px 25px;
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+            border: none;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Advanced Search</h1>
+            <div>
+                <button class="quick-filter" onclick="saveSearch()">💾 Guardar Búsqueda</button>
+            </div>
+        </div>
+
+        <div class="search-container">
+            <div class="main-search">
+                <input type="text" id="searchInput" placeholder="Busca por título, personaje, actor, director..." oninput="handleSearch(this.value)" onfocus="showSuggestions()" onblur="hideSuggestions()">
+                <span class="voice-search" id="voiceSearch" onclick="toggleVoiceSearch()">🎤</span>
+                <span class="search-icon">🔍</span>
+                
+                <div class="search-suggestions" id="suggestions">
+                    <div class="suggestion-item" onclick="selectSuggestion('Iron Man')">
+                        <span class="icon">🎬</span>
+                        <span class="text">Iron Man</span>
+                        <span class="category">Película</span>
+                    </div>
+                    <div class="suggestion-item" onclick="selectSuggestion('Tony Stark')">
+                        <span class="icon">🦸</span>
+                        <span class="text">Tony Stark</span>
+                        <span class="category">Personaje</span>
+                    </div>
+                    <div class="suggestion-item" onclick="selectSuggestion('Robert Downey Jr.')">
+                        <span class="icon">🎭</span>
+                        <span class="text">Robert Downey Jr.</span>
+                        <span class="category">Actor</span>
+                    </div>
+                    <div class="suggestion-item" onclick="selectSuggestion('Jon Favreau')">
+                        <span class="icon">🎬</span>
+                        <span class="text">Jon Favreau</span>
+                        <span class="category">Director</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="quick-filters">
+                <div class="quick-filter active" onclick="toggleQuickFilter(this)">Todos</div>
+                <div class="quick-filter" onclick="toggleQuickFilter(this)">Películas</div>
+                <div class="quick-filter" onclick="toggleQuickFilter(this)">Series</div>
+                <div class="quick-filter" onclick="toggleQuickFilter(this)">Animación</div>
+                <div class="quick-filter" onclick="toggleQuickFilter(this)">MCU</div>
+                <div class="quick-filter" onclick="toggleQuickFilter(this)">Sony</div>
+                <div class="quick-filter" onclick="toggleQuickFilter(this)">Fox</div>
+                <div class="quick-filter" onclick="toggleQuickFilter(this)">2024</div>
+            </div>
+
+            <label class="advanced-toggle">
+                <input type="checkbox" id="advancedToggle" onchange="toggleAdvanced()">
+                <div class="toggle-switch"></div>
+                <span>Búsqueda Avanzada</span>
+            </label>
+
+            <div class="filters-section" id="advancedFilters" style="display: none;">
+                <h3>Filtros Avanzados</h3>
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label>Tipo</label>
+                        <select>
+                            <option value="">Todos</option>
+                            <option value="movie">Película</option>
+                            <option value="series">Serie</option>
+                            <option value="animation">Animación</option>
+                            <option value="special">Especial</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Universo</label>
+                        <select>
+                            <option value="">Todos</option>
+                            <option value="mcu">MCU</option>
+                            <option value="sony">Sony</option>
+                            <option value="fox">Fox</option>
+                            <option value="animation">Animación</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Fase</label>
+                        <select>
+                            <option value="">Todas</option>
+                            <option value="1">Fase 1</option>
+                            <option value="2">Fase 2</option>
+                            <option value="3">Fase 3</option>
+                            <option value="4">Fase 4</option>
+                            <option value="5">Fase 5</option>
+                            <option value="6">Fase 6</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Saga</label>
+                        <select>
+                            <option value="">Todas</option>
+                            <option value="infinity">Infinity Saga</option>
+                            <option value="multiverse">Multiverse Saga</option>
+                            <option value="spiderman">Spider-Man</option>
+                            <option value="xmen">X-Men</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Año Desde</label>
+                        <input type="number" min="1990" max="2025" placeholder="2008">
+                    </div>
+                    <div class="filter-group">
+                        <label>Año Hasta</label>
+                        <input type="number" min="1990" max="2025" placeholder="2024">
+                    </div>
+                    <div class="filter-group">
+                        <label>Personaje</label>
+                        <input type="text" placeholder="Iron Man, Spider-Man...">
+                    </div>
+                    <div class="filter-group">
+                        <label>Actor</label>
+                        <input type="text" placeholder="Robert Downey Jr...">
+                    </div>
+                    <div class="filter-group">
+                        <label>Director</label>
+                        <input type="text" placeholder="Russo Brothers...">
+                    </div>
+                    <div class="filter-group">
+                        <label>Duración Mínima</label>
+                        <select>
+                            <option value="">Cualquiera</option>
+                            <option value="60">+ 1 hora</option>
+                            <option value="90">+ 1.5 horas</option>
+                            <option value="120">+ 2 horas</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Estado</label>
+                        <select>
+                            <option value="">Todos</option>
+                            <option value="released">Estrenado</option>
+                            <option value="upcoming">Próximo</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="results-section">
+            <div class="results-header">
+                <div class="results-count">23 resultados encontrados</div>
+                <select class="sort-dropdown">
+                    <option value="relevance">Relevancia</option>
+                    <option value="date">Fecha</option>
+                    <option value="rating">Rating</option>
+                    <option value="title">Título A-Z</option>
+                </select>
+            </div>
+
+            <div class="results-grid" id="resultsGrid">
+                <div class="result-card">
+                    <div class="result-poster">🦸</div>
+                    <div class="result-info">
+                        <h4>Iron Man</h4>
+                        <p>2008 • 2h 6min</p>
+                        <div class="result-tags">
+                            <span class="result-tag mcu">MCU</span>
+                            <span class="result-tag">Fase 1</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-poster">🦸</div>
+                    <div class="result-info">
+                        <h4>Iron Man 2</h4>
+                        <p>2010 • 2h 4min</p>
+                        <div class="result-tags">
+                            <span class="result-tag mcu">MCU</span>
+                            <span class="result-tag">Fase 1</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-poster">🦸</div>
+                    <div class="result-info">
+                        <h4>Iron Man 3</h4>
+                        <p>2013 • 2h 10min</p>
+                        <div class="result-tags">
+                            <span class="result-tag mcu">MCU</span>
+                            <span class="result-tag">Fase 2</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-poster">🦸</div>
+                    <div class="result-info">
+                        <h4>Avengers: Endgame</h4>
+                        <p>2019 • 3h 1min</p>
+                        <div class="result-tags">
+                            <span class="result-tag mcu">MCU</span>
+                            <span class="result-tag">Fase 3</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-poster">🕷️</div>
+                    <div class="result-info">
+                        <h4>Spider-Man: Homecoming</h4>
+                        <p>2017 • 2h 13min</p>
+                        <div class="result-tags">
+                            <span class="result-tag mcu">MCU</span>
+                            <span class="result-tag">Fase 3</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-poster">🕷️</div>
+                    <div class="result-info">
+                        <h4>Spider-Man: No Way Home</h4>
+                        <p>2021 • 2h 28min</p>
+                        <div class="result-tags">
+                            <span class="result-tag sony">Sony</span>
+                            <span class="result-tag">Fase 4</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-poster">🧙</div>
+                    <div class="result-info">
+                        <h4>Doctor Strange</h4>
+                        <p>2016 • 1h 55min</p>
+                        <div class="result-tags">
+                            <span class="result-tag mcu">MCU</span>
+                            <span class="result-tag">Fase 3</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="result-card">
+                    <div class="result-poster">🧙</div>
+                    <div class="result-info">
+                        <h4>Doctor Strange 2</h4>
+                        <p>2022 • 2h 6min</p>
+                        <div class="result-tags">
+                            <span class="result-tag mcu">MCU</span>
+                            <span class="result-tag">Fase 4</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function handleSearch(value) {
+            const suggestions = document.getElementById('suggestions');
+            if (value.length > 0) {
+                suggestions.classList.add('visible');
+            } else {
+                suggestions.classList.remove('visible');
+            }
+        }
+
+        function showSuggestions() {
+            const input = document.getElementById('searchInput');
+            if (input.value.length > 0) {
+                document.getElementById('suggestions').classList.add('visible');
+            }
+        }
+
+        function hideSuggestions() {
+            setTimeout(() => {
+                document.getElementById('suggestions').classList.remove('visible');
+            }, 200);
+        }
+
+        function selectSuggestion(value) {
+            document.getElementById('searchInput').value = value;
+            document.getElementById('suggestions').classList.remove('visible');
+        }
+
+        function toggleQuickFilter(element) {
+            document.querySelectorAll('.quick-filter').forEach(f => f.classList.remove('active'));
+            element.classList.add('active');
+        }
+
+        function toggleAdvanced() {
+            const filters = document.getElementById('advancedFilters');
+            const toggle = document.getElementById('advancedToggle');
+            filters.style.display = toggle.checked ? 'block' : 'none';
+        }
+
+        function toggleVoiceSearch() {
+            const voiceBtn = document.getElementById('voiceSearch');
+            voiceBtn.classList.toggle('recording');
+            
+            if (voiceBtn.classList.contains('recording')) {
+                setTimeout(() => {
+                    voiceBtn.classList.remove('recording');
+                    document.getElementById('searchInput').value = 'Iron Man';
+                }, 2000);
+            }
+        }
+
+        function saveSearch() {
+            alert('¡Búsqueda guardada! Puedes acceder a tus búsquedas guardadas desde el perfil.');
+        }
+
+        // Result card click
+        document.querySelectorAll('.result-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const title = card.querySelector('h4').textContent;
+                alert(`Abriendo detalles de: ${title}`);
+            });
+        });
+    </script>
+</body>
+</html>

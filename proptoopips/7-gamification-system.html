@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamification System - Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(90deg, #f953c6, #00f5ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .level-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+
+        .level-badge {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            margin: 0 auto 20px;
+            box-shadow: 0 10px 40px rgba(249, 83, 198, 0.5);
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .level-info h2 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            color: #f953c6;
+        }
+
+        .level-info p {
+            opacity: 0.8;
+            margin-bottom: 20px;
+        }
+
+        .xp-bar {
+            max-width: 400px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            margin: 0 auto;
+            overflow: hidden;
+        }
+
+        .xp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #f953c6, #00f5ff);
+            width: 67%;
+            border-radius: 10px;
+            transition: width 0.5s;
+        }
+
+        .xp-text {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            font-size: 2rem;
+            margin-bottom: 5px;
+            color: #00f5ff;
+        }
+
+        .stat-card p {
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }
+
+        .achievements-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .achievements-section h3 {
+            margin-bottom: 20px;
+            color: #f953c6;
+            font-size: 1.3rem;
+        }
+
+        .achievements-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .achievement {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .achievement:hover {
+            transform: translateY(-5px);
+            border-color: #f953c6;
+        }
+
+        .achievement.unlocked {
+            background: linear-gradient(135deg, rgba(249, 83, 198, 0.2), rgba(0, 245, 255, 0.2));
+            border-color: #f953c6;
+        }
+
+        .achievement.locked {
+            opacity: 0.5;
+            filter: grayscale(1);
+        }
+
+        .achievement-icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .achievement h4 {
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+
+        .achievement p {
+            font-size: 0.7rem;
+            opacity: 0.7;
+        }
+
+        .achievement .progress {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 0.7rem;
+            background: rgba(0, 245, 255, 0.3);
+            padding: 3px 8px;
+            border-radius: 10px;
+        }
+
+        .challenges-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .challenges-section h3 {
+            margin-bottom: 20px;
+            color: #00f5ff;
+            font-size: 1.3rem;
+        }
+
+        .challenge-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #00f5ff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .challenge-card.completed {
+            border-left-color: #f953c6;
+            opacity: 0.7;
+        }
+
+        .challenge-info h4 {
+            margin-bottom: 5px;
+            font-size: 1rem;
+        }
+
+        .challenge-info p {
+            font-size: 0.85rem;
+            opacity: 0.7;
+            margin-bottom: 10px;
+        }
+
+        .challenge-reward {
+            font-size: 0.8rem;
+            color: #f953c6;
+            font-weight: bold;
+        }
+
+        .challenge-progress {
+            width: 150px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .challenge-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #f953c6, #00f5ff);
+            border-radius: 4px;
+        }
+
+        .leaderboard-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .leaderboard-section h3 {
+            margin-bottom: 20px;
+            color: #f953c6;
+            font-size: 1.3rem;
+        }
+
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+        }
+
+        .leaderboard-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .leaderboard-item.current-user {
+            border: 2px solid #f953c6;
+        }
+
+        .leaderboard-rank {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .leaderboard-rank.gold {
+            background: linear-gradient(135deg, #ffd700, #ffaa00);
+        }
+
+        .leaderboard-rank.silver {
+            background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+        }
+
+        .leaderboard-rank.bronze {
+            background: linear-gradient(135deg, #cd7f32, #a0522d);
+        }
+
+        .leaderboard-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .leaderboard-info {
+            flex: 1;
+        }
+
+        .leaderboard-name {
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+
+        .leaderboard-level {
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
+
+        .leaderboard-xp {
+            font-weight: bold;
+            color: #00f5ff;
+        }
+
+        .daily-streak {
+            background: linear-gradient(135deg, rgba(249, 83, 198, 0.2), rgba(0, 245, 255, 0.2));
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .streak-info h4 {
+            margin-bottom: 5px;
+            color: #f953c6;
+        }
+
+        .streak-info p {
+            font-size: 0.85rem;
+            opacity: 0.8;
+        }
+
+        .streak-days {
+            display: flex;
+            gap: 5px;
+        }
+
+        .streak-day {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+        }
+
+        .streak-day.completed {
+            background: linear-gradient(135deg, #f953c6, #00f5ff);
+        }
+
+        .streak-day.today {
+            border: 2px solid #f953c6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎮 Gamification System</h1>
+            <div>
+                <span style="margin-right: 15px;">🔥 12 días racha</span>
+                <span>⭐ 2,450 XP</span>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="level-section">
+                <div class="level-badge">🦸</div>
+                <div class="level-info">
+                    <h2>Nivel 15 - Vengador Veterano</h2>
+                    <p>Has completado el 67% de la Infinity Saga</p>
+                    <div class="xp-bar">
+                        <div class="xp-fill"></div>
+                    </div>
+                    <div class="xp-text">6,700 / 10,000 XP para Nivel 16</div>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>23</h3>
+                    <p>Títulos vistos</p>
+                </div>
+                <div class="stat-card">
+                    <h3>156</h3>
+                    <p>Horas de contenido</p>
+                </div>
+                <div class="stat-card">
+                    <h3>8</h3>
+                    <p>Logros desbloqueados</p>
+                </div>
+                <div class="stat-card">
+                    <h3>#42</h3>
+                    <p>Ranking global</p>
+                </div>
+            </div>
+
+            <div class="daily-streak">
+                <div class="streak-info">
+                    <h4>🔥 Racha Diaria: 12 días</h4>
+                    <p>Mantén tu racha para ganar bonus de XP</p>
+                </div>
+                <div class="streak-days">
+                    <div class="streak-day completed">L</div>
+                    <div class="streak-day completed">M</div>
+                    <div class="streak-day completed">X</div>
+                    <div class="streak-day completed">J</div>
+                    <div class="streak-day completed">V</div>
+                    <div class="streak-day completed">S</div>
+                    <div class="streak-day completed">D</div>
+                    <div class="streak-day completed">L</div>
+                    <div class="streak-day completed">M</div>
+                    <div class="streak-day completed">X</div>
+                    <div class="streak-day completed">J</div>
+                    <div class="streak-day today">V</div>
+                </div>
+            </div>
+
+            <div class="achievements-section">
+                <h3>🏆 Logros</h3>
+                <div class="achievements-grid">
+                    <div class="achievement unlocked">
+                        <div class="progress">✓</div>
+                        <div class="achievement-icon">🎬</div>
+                        <h4>Primer Paso</h4>
+                        <p>Ve tu primera película</p>
+                    </div>
+                    <div class="achievement unlocked">
+                        <div class="progress">✓</div>
+                        <div class="achievement-icon">⚡</div>
+                        <h4>Maratonista</h4>
+                        <p>5 películas en un día</p>
+                    </div>
+                    <div class="achievement unlocked">
+                        <div class="progress">✓</div>
+                        <div class="achievement-icon">🌌</div>
+                        <h4>Infinity Saga</h4>
+                        <p>Completa las 3 fases</p>
+                    </div>
+                    <div class="achievement">
+                        <div class="progress">67%</div>
+                        <div class="achievement-icon">🕷️</div>
+                        <h4>Spider-Verse</h4>
+                        <p>Todas las de Spider-Man</p>
+                    </div>
+                    <div class="achievement">
+                        <div class="progress">33%</div>
+                        <div class="achievement-icon">🧙</div>
+                        <h4>Místico</h4>
+                        <p>Todo de Doctor Strange</p>
+                    </div>
+                    <div class="achievement locked">
+                        <div class="progress">🔒</div>
+                        <div class="achievement-icon">🎯</div>
+                        <h4>Perfeccionista</h4>
+                        <p>100% del MCU</p>
+                    </div>
+                    <div class="achievement locked">
+                        <div class="progress">🔒</div>
+                        <div class="achievement-icon">👥</div>
+                        <h4>Social</h4>
+                        <p>5 watch parties</p>
+                    </div>
+                    <div class="achievement locked">
+                        <div class="progress">🔒</div>
+                        <div class="achievement-icon">📝</div>
+                        <h4>Crítico</h4>
+                        <p>50 reseñas</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="challenges-section">
+                <h3>🎯 Desafíos Activos</h3>
+                <div class="challenge-card">
+                    <div class="challenge-info">
+                        <h4>🎬 Maratón de Fase 4</h4>
+                        <p>Completa todas las películas de la Fase 4</p>
+                        <div class="challenge-reward">+500 XP</div>
+                    </div>
+                    <div class="challenge-progress">
+                        <div class="challenge-progress-fill" style="width: 60%;"></div>
+                    </div>
+                </div>
+                <div class="challenge-card">
+                    <div class="challenge-info">
+                        <h4>🕷️ Spider-Man Week</h4>
+                        <p>Ve 3 películas de Spider-Man esta semana</p>
+                        <div class="challenge-reward">+200 XP</div>
+                    </div>
+                    <div class="challenge-progress">
+                        <div class="challenge-progress-fill" style="width: 33%;"></div>
+                    </div>
+                </div>
+                <div class="challenge-card completed">
+                    <div class="challenge-info">
+                        <h4>🌙 Loki's Temporal</h4>
+                        <p>Completa Loki Temporada 1</p>
+                        <div class="challenge-reward">✓ Completado (+150 XP)</div>
+                    </div>
+                    <div class="challenge-progress">
+                        <div class="challenge-progress-fill" style="width: 100%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="leaderboard-section">
+                <h3>🏆 Leaderboard Semanal</h3>
+                <div class="leaderboard-item">
+                    <div class="leaderboard-rank gold">1</div>
+                    <div class="leaderboard-avatar">🦸</div>
+                    <div class="leaderboard-info">
+                        <div class="leaderboard-name">MarvelMaster_99</div>
+                        <div class="leaderboard-level">Nivel 28 - Legend</div>
+                    </div>
+                    <div class="leaderboard-xp">15,230 XP</div>
+                </div>
+                <div class="leaderboard-item">
+                    <div class="leaderboard-rank silver">2</div>
+                    <div class="leaderboard-avatar">🧙</div>
+                    <div class="leaderboard-info">
+                        <div class="leaderboard-name">StrangeFan</div>
+                        <div class="leaderboard-level">Nivel 24 - Master</div>
+                    </div>
+                    <div class="leaderboard-xp">12,450 XP</div>
+                </div>
+                <div class="leaderboard-item">
+                    <div class="leaderboard-rank bronze">3</div>
+                    <div class="leaderboard-avatar">🕷️</div>
+                    <div class="leaderboard-info">
+                        <div class="leaderboard-name">Spidey_Boy</div>
+                        <div class="leaderboard-level">Nivel 22 - Expert</div>
+                    </div>
+                    <div class="leaderboard-xp">10,890 XP</div>
+                </div>
+                <div class="leaderboard-item current-user">
+                    <div class="leaderboard-rank">42</div>
+                    <div class="leaderboard-avatar">👤</div>
+                    <div class="leaderboard-info">
+                        <div class="leaderboard-name">Tú</div>
+                        <div class="leaderboard-level">Nivel 15 - Veteran</div>
+                    </div>
+                    <div class="leaderboard-xp">2,450 XP</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulate XP gain
+        function addXP(amount) {
+            const xpFill = document.querySelector('.xp-fill');
+            const currentWidth = parseFloat(xpFill.style.width) || 67;
+            const newWidth = Math.min(currentWidth + amount, 100);
+            xpFill.style.width = `${newWidth}%`;
+        }
+
+        // Click on achievements to show details
+        document.querySelectorAll('.achievement').forEach(achievement => {
+            achievement.addEventListener('click', () => {
+                if (achievement.classList.contains('locked')) {
+                    alert('🔒 Este logro aún está bloqueado. ¡Sigue progresando para desbloquearlo!');
+                } else if (achievement.classList.contains('unlocked')) {
+                    alert('✓ ¡Logro desbloqueado! Ya has completado este desafío.');
+                } else {
+                    alert(`📊 Progreso actual: ${achievement.querySelector('.progress').textContent}`);
+                }
+            });
+        });
+
+        // Simulate challenge completion
+        document.querySelectorAll('.challenge-card:not(.completed)').forEach(challenge => {
+            challenge.addEventListener('click', () => {
+                const progressFill = challenge.querySelector('.challenge-progress-fill');
+                const currentWidth = parseFloat(progressFill.style.width);
+                const newWidth = Math.min(currentWidth + 20, 100);
+                progressFill.style.width = `${newWidth}%`;
+                
+                if (newWidth === 100) {
+                    challenge.classList.add('completed');
+                    challenge.querySelector('.challenge-reward').textContent = '✓ Completado';
+                    addXP(10);
+                    alert('🎉 ¡Desafío completado! +XP ganado');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
