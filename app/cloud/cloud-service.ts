@@ -241,15 +241,18 @@ export async function uploadMarathon(profileId: string, marathon: LocalMarathon,
   const client = getSupabase();
   if (!client) throw new Error("Supabase todavía no está configurado.");
   const shareSlug = visibility === "public" ? `${marathon.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 45) || "maraton"}-${crypto.randomUUID().slice(0, 7)}` : null;
-  const { data, error } = await client.from("marathons").insert({
+  const { data, error } = await client.from("marathons").upsert({
     owner_profile_id: profileId,
+    source_local_id: marathon.id,
     name: marathon.name,
     description: marathon.description,
     visibility,
     share_slug: shareSlug,
     cover_ids: marathon.coverIds,
-  }).select("*").single();
+  }, { onConflict: "owner_profile_id,source_local_id" }).select("*").single();
   if (error) throw error;
+  const cleared = await client.from("marathon_items").delete().eq("marathon_id", data.id);
+  if (cleared.error) throw cleared.error;
   const items = marathon.tasks.map((task, index) => ({ marathon_id: data.id, position: (index + 1) * 1000, title_id: task.itemId, episode: task.episode || null }));
   if (items.length) {
     const inserted = await client.from("marathon_items").insert(items);
@@ -283,6 +286,126 @@ export async function syncAchievements(profileId: string, achievementIds: string
   const rows = achievementIds.map((achievementId) => ({ profile_id: profileId, achievement_id: achievementId, visibility: "private" }));
   const { error } = await client.from("user_achievements").upsert(rows, { onConflict: "profile_id,achievement_id" });
   if (error) throw error;
+}
+
+function storedArray(key: string): string[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+  } catch { return []; }
+}
+
+function storedRecord<T>(key: string): Record<string, T> {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, T> : {};
+  } catch { return {}; }
+}
+
+/**
+ * Refleja el estado local en las tablas relacionales. profile_snapshots sigue
+ * funcionando como respaldo offline, pero la fuente consultable en la nube
+ * queda normalizada por título y episodio.
+ */
+export async function syncStructuredProfile(profileId: string) {
+  const client = getSupabase();
+  if (!client) return;
+  const watched = new Set(storedArray(NEXUS_KEYS.watched));
+  const watchlist = new Set(storedArray(NEXUS_KEYS.watchlist));
+  const ignored = new Set(storedArray(NEXUS_KEYS.ignored));
+  const favorites = new Set(storedArray(NEXUS_KEYS.favorites));
+  const ratings = storedRecord<number>(NEXUS_KEYS.ratings);
+  const notes = storedRecord<string>(NEXUS_KEYS.notes);
+  const watchedDates = storedRecord<string>(NEXUS_KEYS.watchedDates);
+  const rewatches = storedRecord<number>(NEXUS_KEYS.rewatches);
+  const episodes = storedRecord<number[]>(NEXUS_KEYS.episodes);
+  const titleIds = new Set<string>([
+    ...watched, ...watchlist, ...ignored, ...favorites,
+    ...Object.keys(ratings), ...Object.keys(notes), ...Object.keys(watchedDates),
+    ...Object.keys(rewatches), ...Object.keys(episodes),
+  ]);
+
+  const existingTitles = await client.from("title_progress").select("title_id").eq("profile_id", profileId);
+  if (existingTitles.error) throw existingTitles.error;
+  if (titleIds.size) {
+    const rows = [...titleIds].map((titleId) => ({
+      profile_id: profileId,
+      title_id: titleId,
+      status: ignored.has(titleId) ? "ignored" : watched.has(titleId) ? "completed" : (episodes[titleId]?.length || 0) > 0 ? "started" : "pending",
+      favorite: favorites.has(titleId),
+      watchlist: watchlist.has(titleId),
+      rating: ratings[titleId] || null,
+      private_note: notes[titleId] || "",
+      watched_at: watchedDates[titleId] ? new Date(`${watchedDates[titleId]}T12:00:00Z`).toISOString() : null,
+      rewatch_count: Math.max(0, Number(rewatches[titleId]) || 0),
+      revision: Date.now(),
+    }));
+    const inserted = await client.from("title_progress").upsert(rows, { onConflict: "profile_id,title_id" });
+    if (inserted.error) throw inserted.error;
+  }
+  const staleTitleIds = (existingTitles.data || []).map((row) => row.title_id as string).filter((titleId) => !titleIds.has(titleId));
+  if (staleTitleIds.length) {
+    const removed = await client.from("title_progress").delete().eq("profile_id", profileId).in("title_id", staleTitleIds);
+    if (removed.error) throw removed.error;
+  }
+
+  const clearedEpisodes = await client.from("episode_progress").delete().eq("profile_id", profileId);
+  if (clearedEpisodes.error) throw clearedEpisodes.error;
+  const episodeRows = Object.entries(episodes).flatMap(([titleId, values]) =>
+    (Array.isArray(values) ? values : []).map((episodeNumber) => ({
+      profile_id: profileId,
+      title_id: titleId,
+      season_number: 1,
+      episode_number: episodeNumber,
+      completed: true,
+      revision: Date.now(),
+    })),
+  );
+  if (episodeRows.length) {
+    const inserted = await client.from("episode_progress").insert(episodeRows);
+    if (inserted.error) throw inserted.error;
+  }
+
+  const preferences = Object.fromEntries([
+    NEXUS_KEYS.favoriteTracks, NEXUS_KEYS.intent, NEXUS_KEYS.spoilers,
+    NEXUS_KEYS.preferences, NEXUS_KEYS.reminders, NEXUS_KEYS.customRoute,
+  ].map((key) => {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return [key, null];
+    try { return [key, JSON.parse(raw)]; } catch { return [key, raw]; }
+  }));
+  const savedPreferences = await client.from("user_preferences").upsert({ profile_id: profileId, preferences }, { onConflict: "profile_id" });
+  if (savedPreferences.error) throw savedPreferences.error;
+  await syncAchievements(profileId, storedArray(NEXUS_KEYS.achievements));
+}
+
+export async function syncLocalMarathons(profileId: string) {
+  const client = getSupabase();
+  if (!client) return;
+  let local: LocalMarathon[] = [];
+  try { local = JSON.parse(localStorage.getItem(NEXUS_KEYS.customMarathons) || "[]"); } catch { return; }
+  const fingerprintKey = `nexus-cloud-marathons-v1:${profileId}`;
+  const fingerprint = JSON.stringify(local);
+  if (localStorage.getItem(fingerprintKey) === fingerprint) return;
+  for (const marathon of local) {
+    const existing = await client.from("marathons").select("id").eq("owner_profile_id", profileId).eq("source_local_id", marathon.id).maybeSingle();
+    // Permite que una instalación actual siga funcionando hasta ejecutar 002.
+    if (existing.error && (existing.error.code === "PGRST204" || /source_local_id/i.test(existing.error.message))) return;
+    if (existing.error) throw existing.error;
+    const saved = existing.data
+      ? await client.from("marathons").update({ name: marathon.name, description: marathon.description, cover_ids: marathon.coverIds }).eq("id", existing.data.id).select("id").single()
+      : await client.from("marathons").insert({ owner_profile_id: profileId, source_local_id: marathon.id, name: marathon.name, description: marathon.description, visibility: "private", cover_ids: marathon.coverIds }).select("id").single();
+    if (saved.error) throw saved.error;
+    const data = saved.data;
+    const removed = await client.from("marathon_items").delete().eq("marathon_id", data.id);
+    if (removed.error) throw removed.error;
+    if (marathon.tasks.length) {
+      const rows = marathon.tasks.map((task, index) => ({ marathon_id: data.id, position: (index + 1) * 1000, title_id: task.itemId, episode: task.episode || null }));
+      const inserted = await client.from("marathon_items").insert(rows);
+      if (inserted.error) throw inserted.error;
+    }
+  }
+  localStorage.setItem(fingerprintKey, fingerprint);
 }
 
 export async function requestAccountDeletion() {

@@ -45,7 +45,7 @@ npx supabase db push
 npx supabase functions deploy delete-account
 ```
 
-El `project ref` aparece en **Project Settings → General**. La migración que se aplicará está en `supabase/migrations/202608080001_nexus_cloud.sql`.
+El `project ref` aparece en **Project Settings → General**. Se aplicarán, en orden, `supabase/migrations/202608080001_nexus_cloud.sql` y `supabase/migrations/202608080002_catalog_and_event_sync.sql`. La segunda crea el catálogo normalizado y sus claves foráneas.
 
 Alternativa: abre **SQL Editor**, copia la migración completa y ejecútala. La función `delete-account` sí debe publicarse con la CLI para que la eliminación total de cuentas funcione.
 
@@ -91,7 +91,7 @@ Reinicia `npm run dev` y verifica:
 2. Confirmar el correo.
 3. Iniciar sesión.
 4. Marcar una película y un episodio.
-5. Pulsar **Cuenta y sincronización → Sincronizar ahora**.
+5. Esperar a que el indicador muestre **Sincronizado**; no existe un botón manual.
 6. Abrir una ventana privada, iniciar sesión y comprobar el progreso.
 7. Crear un maratón y aceptar su invitación con otra cuenta.
 
@@ -177,7 +177,7 @@ Las sesiones de Electron se cifran mediante la protección de Windows y el progr
 
 ## 9. Comprobaciones después del despliegue
 
-- La página principal abre sin cuenta.
+- La portada permite iniciar sesión, registrarse o continuar como invitado.
 - La PWA se puede instalar desde Chrome o Edge.
 - Los 897 recursos visuales responden correctamente.
 - Registro, confirmación, login, logout y recuperación funcionan.
@@ -185,7 +185,6 @@ Las sesiones de Electron se cifran mediante la protección de Windows y el progr
 - Los perfiles infantiles no son públicos.
 - Una invitación caducada es rechazada.
 - Las notas privadas no aparecen en perfiles compartidos.
-- Exportar cuenta descarga JSON.
 - Eliminar cuenta borra el usuario de Supabase Auth.
 - La aplicación funciona con Internet desconectado después de una primera visita.
 

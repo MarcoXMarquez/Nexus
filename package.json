@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint app desktop supabase tests next.config.ts",
     "db:generate": "drizzle-kit generate",
+    "db:catalog": "node scripts/generate-catalog-migration.mjs",
     "desktop:build": "vite build --config desktop/vite.config.ts",
     "desktop:start": "npm run desktop:build && electron .",
     "desktop:package": "npm run desktop:build && electron-forge package",

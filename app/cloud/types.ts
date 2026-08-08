@@ -103,7 +103,6 @@ declare global {
       openAccount: () => void;
       shareMarathon: (marathon: LocalMarathon) => Promise<{ ok: boolean; url?: string; error?: string }>;
       importInvitation: (token: string) => Promise<{ ok: boolean; error?: string }>;
-      syncNow: () => Promise<void>;
     };
   }
 }

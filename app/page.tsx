@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { AuthGate } from "./cloud/auth-gate";
 
 const NexusApp = dynamic(
   () => import("../desktop/renderer").then((module) => module.App),
@@ -13,5 +14,5 @@ const NexusApp = dynamic(
  * productos distintos.
  */
 export default function HomePage() {
-  return <NexusApp />;
+  return <AuthGate><NexusApp /></AuthGate>;
 }

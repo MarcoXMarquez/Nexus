@@ -348,6 +348,9 @@ function useStoredProgress() {
   useEffect(() => localStorage.setItem(REWATCHES_KEY, JSON.stringify(rewatches)), [rewatches]);
   useEffect(() => localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-500))), [history]);
   useEffect(() => localStorage.setItem(CUSTOM_LISTS_KEY, JSON.stringify(customLists)), [customLists]);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("nexus:local-change", { detail: { kind: "progress" } }));
+  }, [watched, episodes, watchlist, ignored, favoriteTracks, intent, spoilerSafe, activity, ratings, favorites, notes, watchedDates, rewatches, history, customLists]);
   return { watched, setWatched, episodes, setEpisodes, watchlist, setWatchlist, ignored, setIgnored, favoriteTracks, setFavoriteTracks, intent, setIntent, spoilerSafe, setSpoilerSafe, activity, setActivity, ratings, setRatings, favorites, setFavorites, notes, setNotes, watchedDates, setWatchedDates, rewatches, setRewatches, history, setHistory, customLists, setCustomLists };
 }
 
@@ -396,6 +399,7 @@ export function App() {
     root.style.setProperty("--accent-intensity", String(preferences.intensity / 100));
     root.style.setProperty("--accent-weight", `${Math.round(preferences.intensity / 5)}%`);
     root.style.setProperty("--theme-saturation", String(.72 + preferences.intensity / 180));
+    window.dispatchEvent(new CustomEvent("nexus:local-change", { detail: { kind: "preferences" } }));
   }, [preferences]);
   useEffect(() => {
     const openCloud = () => setCloudOpen(true);
@@ -871,8 +875,6 @@ export function App() {
           <button className="cloud-sidebar-button" onClick={() => setCloudOpen(true)}><Icon name="user"/>Cuenta y sincronización</button>
           <button onClick={() => setGlobalSearchOpen(true)}><Icon name="search"/>Búsqueda global <kbd>Ctrl K</kbd></button>
           <button onClick={() => setSettingsOpen(true)}><Icon name="settings"/>Apariencia y acceso</button>
-          <button onClick={exportProgress}><Icon name="download"/>Exportar perfil</button>
-          <button onClick={importProgress}><Icon name="upload"/>Importar perfil</button>
           <a className="tmdb-credit" href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">Arte de títulos proporcionado por TMDB</a>
         </div>
         <div className="keyboard-hint"><kbd>Ctrl</kbd><kbd>K</kbd><span>buscar todo</span><kbd>Alt</kbd><kbd>1–7</kbd><span>secciones</span></div>
@@ -1255,7 +1257,7 @@ function CustomMarathonBuilder({ author, onOpenDetail, notify }: { author:string
   const [saved, setSaved] = useState<SharedMarathon[]>(()=>{ try { return JSON.parse(localStorage.getItem(CUSTOM_MARATHONS_KEY)||"[]"); } catch { return []; } });
   const [name,setName]=useState("Mi maratón Marvel"); const [description,setDescription]=useState(""); const [search,setSearch]=useState("");
   const [tasks,setTasks]=useState<Array<{itemId:string;episode?:number}>>([]); const [episodeChoice,setEpisodeChoice]=useState<Record<string,number>>({}); const [dragged,setDragged]=useState<number|null>(null);
-  useEffect(()=>localStorage.setItem(CUSTOM_MARATHONS_KEY,JSON.stringify(saved)),[saved]);
+  useEffect(()=>{localStorage.setItem(CUSTOM_MARATHONS_KEY,JSON.stringify(saved));window.dispatchEvent(new CustomEvent("nexus:local-change",{detail:{kind:"marathons"}}));},[saved]);
   const results=useMemo(()=>search.trim().length>1?ITEMS.filter((item)=>!item.upcoming&&normalize([item.title,item.saga,trackForId(item.trackId)?.short].filter(Boolean).join(" ")).includes(normalize(search))).slice(0,8):[],[search]);
   const durationOf=(task:{itemId:string;episode?:number})=>{ const item=ITEM_BY_ID.get(task.itemId)!; return task.episode ? TITLE_METADATA[item.id]?.episodeDurations?.[task.episode-1]||TITLE_METADATA[item.id]?.episodeRuntimeMinutes||EPISODE_RUNTIME_OVERRIDES[item.id]||24 : TITLE_METADATA[item.id]?.runtimeMinutes||RUNTIME_OVERRIDES[item.id]||120; };
   const totalMinutes=tasks.reduce((sum,task)=>sum+durationOf(task),0);

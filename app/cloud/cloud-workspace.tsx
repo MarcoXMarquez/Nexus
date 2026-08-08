@@ -17,18 +17,19 @@ import {
   signIn,
   signOut,
   signUp,
-  syncAchievements,
+  syncLocalMarathons,
   syncProfile,
+  syncStructuredProfile,
   updateCloudProfile,
   uploadMarathon,
   upsertLocalProfiles,
 } from "./cloud-service";
-import { applySnapshot, captureSnapshot, downloadJson, getDeviceId, readJsonFile, saveLocalSnapshot } from "./local-repository";
+import { captureSnapshot, getDeviceId, saveLocalSnapshot } from "./local-repository";
 import { LAST_SYNC_KEY, NEXUS_KEYS, PENDING_INVITE_KEY } from "./storage-keys";
 import { cloudConfigured, getSupabase } from "./supabase";
 import type { CloudMarathon, CloudProfile, DeviceRecord, LocalMarathon, LocalProfile, SyncState } from "./types";
 
-type CloudTab = "account" | "profiles" | "marathons" | "achievements" | "devices" | "data";
+type CloudTab = "account" | "profiles" | "marathons" | "achievements" | "devices" | "privacy";
 
 type Props = {
   open: boolean;
@@ -47,7 +48,7 @@ const TAB_LABELS: Array<{ id: CloudTab; label: string }> = [
   { id: "marathons", label: "Maratones" },
   { id: "achievements", label: "Logros" },
   { id: "devices", label: "Dispositivos" },
-  { id: "data", label: "Mis datos" },
+  { id: "privacy", label: "Privacidad" },
 ];
 
 function readableDate(value?: string | null) {
@@ -99,6 +100,8 @@ export function CloudWorkspace(props: Props) {
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const lastFingerprint = useRef("");
   const initializedAccount = useRef<string | null>(null);
+  const syncInFlight = useRef(false);
+  const syncAgain = useRef(false);
 
   const activeCloudProfile = useMemo(
     () => profiles.find((profile) => profile.local_key === props.activeProfileId) || profiles[0] || null,
@@ -126,13 +129,21 @@ export function CloudWorkspace(props: Props) {
       setMessage(session ? "Sin conexión · los cambios quedan guardados localmente" : "Modo invitado · guardado en este dispositivo");
       return;
     }
+    if (syncInFlight.current) {
+      syncAgain.current = true;
+      return;
+    }
+    syncInFlight.current = true;
     setStatus("syncing");
     setMessage("Sincronizando progreso…");
     try {
       const nextProfiles = knownProfiles?.length ? knownProfiles : profiles.length ? profiles : await refreshCloudData(session);
       const syncedAt = await syncProfile(session, nextProfiles, props.activeProfileId, preference);
       const selected = nextProfiles.find((profile) => profile.local_key === props.activeProfileId) || nextProfiles[0];
-      if (selected) await syncAchievements(selected.id, unlockedAchievementIds());
+      if (selected) {
+        await syncStructuredProfile(selected.id);
+        await syncLocalMarathons(selected.id);
+      }
       setLastSync(syncedAt);
       setStatus("synced");
       setMessage("Todo está sincronizado");
@@ -141,6 +152,12 @@ export function CloudWorkspace(props: Props) {
       setStatus("error");
       setMessage(errorMessage(error));
       if (/desvinculado/i.test(errorMessage(error))) { await signOut("local"); setSession(null); }
+    } finally {
+      syncInFlight.current = false;
+      if (syncAgain.current) {
+        syncAgain.current = false;
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent("nexus:local-change")), 0);
+      }
     }
   }, [profiles, props.activeProfileId, refreshCloudData, session]);
 
@@ -182,12 +199,14 @@ export function CloudWorkspace(props: Props) {
 
   useEffect(() => {
     if (!session) return;
-    const timer = window.setInterval(() => {
-      const fingerprint = JSON.stringify(captureSnapshot(props.activeProfileId).values);
-      if (fingerprint !== lastFingerprint.current) void runSync("merge");
-    }, 30000);
-    return () => window.clearInterval(timer);
-  }, [props.activeProfileId, runSync, session]);
+    let timer = 0;
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void runSync("merge"), 550);
+    };
+    window.addEventListener("nexus:local-change", schedule);
+    return () => { window.clearTimeout(timer); window.removeEventListener("nexus:local-change", schedule); };
+  }, [runSync, session]);
 
   useEffect(() => {
     let fingerprint = "";
@@ -204,7 +223,6 @@ export function CloudWorkspace(props: Props) {
   useEffect(() => {
     window.nexusCloud = {
       openAccount: () => window.dispatchEvent(new CustomEvent("nexus:open-cloud")),
-      syncNow: () => runSync(),
       shareMarathon: async (marathon) => {
         if (!session || !activeCloudProfile) return { ok: false, error: "Inicia sesión para compartir mediante enlace." };
         try {
@@ -222,7 +240,7 @@ export function CloudWorkspace(props: Props) {
       },
     };
     return () => { delete window.nexusCloud; };
-  }, [activeCloudProfile, runSync, session]);
+  }, [activeCloudProfile, session]);
 
   async function submitAuth(event: React.FormEvent) {
     event.preventDefault();
@@ -327,39 +345,6 @@ export function CloudWorkspace(props: Props) {
     finally { setBusy(false); }
   }
 
-  async function exportAllData() {
-    const client = getSupabase();
-    if (!client || !session) return;
-    setBusy(true);
-    try {
-      const [profileRows, deviceRows, marathonRows, achievementRows] = await Promise.all([
-        client.from("viewer_profiles").select("*,profile_snapshots(*)").eq("owner_id", session.user.id),
-        client.from("devices").select("*").eq("user_id", session.user.id),
-        client.from("marathons").select("*,marathon_items(*)"),
-        client.from("user_achievements").select("*")
-      ]);
-      downloadJson(`nexus-cuenta-${new Date().toISOString().slice(0, 10)}.json`, {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        account: { id: session.user.id, email: session.user.email },
-        profiles: profileRows.data || [], devices: deviceRows.data || [], marathons: marathonRows.data || [], achievements: achievementRows.data || [],
-        localSnapshot: captureSnapshot(props.activeProfileId),
-      });
-      props.notify("Copia completa descargada");
-    } finally { setBusy(false); }
-  }
-
-  async function importLocalBackup(file: File) {
-    try {
-      const payload = await readJsonFile(file) as { localSnapshot?: unknown };
-      const snapshot = (payload.localSnapshot || payload) as ReturnType<typeof captureSnapshot>;
-      if (snapshot?.version !== 1 || !snapshot.values) throw new Error("El archivo no es una copia válida de Nexus 1.0.");
-      applySnapshot(snapshot, props.activeProfileId);
-      props.notify("Copia importada. Nexus se recargará.");
-      window.setTimeout(() => window.location.reload(), 500);
-    } catch (error) { setMessage(errorMessage(error)); }
-  }
-
   async function deleteAccount() {
     if (deleteConfirmation !== "ELIMINAR") return;
     setBusy(true);
@@ -398,12 +383,12 @@ export function CloudWorkspace(props: Props) {
         {!cloudConfigured ? <CloudSetupNotice /> : !session ? <AuthView mode={formMode} onMode={setFormMode} email={email} password={password} displayName={displayName} onEmail={setEmail} onPassword={setPassword} onDisplayName={setDisplayName} onSubmit={submitAuth} busy={busy} message={message} /> : <>
           <nav className="cloud-tabs">{TAB_LABELS.map((entry) => <button key={entry.id} className={tab === entry.id ? "active" : ""} onClick={() => setTab(entry.id)}>{entry.label}</button>)}</nav>
           <div className="cloud-panel-scroll">
-            {tab === "account" && <AccountTab session={session} status={status} lastSync={lastSync} onSync={() => runSync()} onPreferLocal={() => runSync("local")} onPreferCloud={() => runSync("cloud")} onSignOut={async () => { await signOut(); setSession(null); }} onSignOutAll={async () => { await signOut("global"); setSession(null); }} busy={busy} />}
+            {tab === "account" && <AccountTab session={session} status={status} lastSync={lastSync} onSignOut={async () => { await signOut(); localStorage.removeItem("nexus-guest-entry-v1"); window.location.reload(); }} onSignOutAll={async () => { await signOut("global"); localStorage.removeItem("nexus-guest-entry-v1"); window.location.reload(); }} />}
             {tab === "profiles" && <ProfilesTab profiles={profiles} activeLocalId={props.activeProfileId} onSwitch={props.onSwitchLocalProfile} onVisibility={async (profile, visibility) => { await updateCloudProfile(profile.id, { visibility }); setProfiles((current) => current.map((entry) => entry.id === profile.id ? { ...entry, visibility } : entry)); }} onDelete={removeProfile} name={newProfileName} avatar={newProfileAvatar} color={newProfileColor} child={newProfileChild} onName={setNewProfileName} onAvatar={setNewProfileAvatar} onColor={setNewProfileColor} onChild={setNewProfileChild} onCreate={addProfile} busy={busy} />}
             {tab === "marathons" && <MarathonsTab local={localMarathons()} cloud={marathons} inviteToken={inviteToken} onInviteToken={setInviteToken} onJoin={joinMarathon} onUpload={uploadLocalMarathon} onInvite={inviteTo} onCopy={importCloudMarathon} busy={busy} />}
             {tab === "achievements" && <AchievementsTab ids={unlockedAchievementIds()} profile={activeCloudProfile} />}
             {tab === "devices" && <DevicesTab devices={devices} currentId={getDeviceId()} onRevoke={async (id) => { await revokeDevice(id); if (session) setDevices(await listDevices(session)); }} />}
-            {tab === "data" && <DataTab onExport={exportAllData} onImport={importLocalBackup} confirmation={deleteConfirmation} onConfirmation={setDeleteConfirmation} onDelete={deleteAccount} busy={busy} />}
+            {tab === "privacy" && <PrivacyTab confirmation={deleteConfirmation} onConfirmation={setDeleteConfirmation} onDelete={deleteAccount} busy={busy} />}
           </div>
         </>}
       </aside>
@@ -419,8 +404,8 @@ function AuthView(props: { mode:"signin"|"signup"|"recover"; onMode:(mode:"signi
   return <div className="cloud-auth"><div className="cloud-auth-benefits"><b>Continúa en cualquier dispositivo</b><ul><li>Sincroniza películas y capítulos.</li><li>Comparte maratones por invitación.</li><li>Mantén perfiles y logros separados.</li><li>Usa Nexus sin conexión.</li></ul></div><form onSubmit={props.onSubmit}><div className="cloud-mode"><button type="button" className={props.mode==="signin"?"active":""} onClick={()=>props.onMode("signin")}>Entrar</button><button type="button" className={props.mode==="signup"?"active":""} onClick={()=>props.onMode("signup")}>Crear cuenta</button></div>{props.mode==="signup"&&<label><span>Nombre</span><input value={props.displayName} onChange={(event)=>props.onDisplayName(event.target.value)} required maxLength={50}/></label>}<label><span>Correo</span><input type="email" value={props.email} onChange={(event)=>props.onEmail(event.target.value)} required autoComplete="email"/></label>{props.mode!=="recover"&&<label><span>Contraseña</span><input type="password" value={props.password} onChange={(event)=>props.onPassword(event.target.value)} minLength={8} required autoComplete={props.mode==="signup"?"new-password":"current-password"}/></label>}<button className="cloud-primary" disabled={props.busy}>{props.busy?"Procesando…":props.mode==="signin"?"Iniciar sesión":props.mode==="signup"?"Crear mi cuenta":"Enviar enlace"}</button><button type="button" className="cloud-link" onClick={()=>props.onMode(props.mode==="recover"?"signin":"recover")}>{props.mode==="recover"?"Volver al inicio":"Olvidé mi contraseña"}</button>{props.message&&<p className="cloud-form-message">{props.message}</p>}</form></div>;
 }
 
-function AccountTab(props:{session:Session;status:SyncState;lastSync:string|null;onSync:()=>void;onPreferLocal:()=>void;onPreferCloud:()=>void;onSignOut:()=>void;onSignOutAll:()=>void;busy:boolean}) {
-  return <section className="cloud-section"><div className="account-identity"><div>{(props.session.user.email||"N").slice(0,1).toUpperCase()}</div><span><strong>{props.session.user.user_metadata.display_name||"Cuenta Nexus"}</strong><small>{props.session.user.email}</small></span></div><div className="sync-card"><i className={`sync-dot ${props.status}`}/><span><strong>{props.status==="synced"?"Todo sincronizado":props.status==="syncing"?"Sincronizando":props.status==="offline"?"Trabajando sin conexión":"Revisar sincronización"}</strong><small>Última sincronización: {readableDate(props.lastSync)}</small></span><button onClick={props.onSync} disabled={props.busy}>Sincronizar ahora</button></div><div className="merge-actions"><h3>Resolver manualmente</h3><p>Úsalo solamente si otro dispositivo tiene una versión diferente.</p><button onClick={props.onPreferLocal}>Subir los datos de este dispositivo</button><button onClick={props.onPreferCloud}>Descargar la versión cloud</button></div><button className="cloud-secondary" onClick={props.onSignOut}>Cerrar sesión en este dispositivo</button><button className="cloud-secondary" onClick={props.onSignOutAll}>Cerrar todas las sesiones</button></section>;
+function AccountTab(props:{session:Session;status:SyncState;lastSync:string|null;onSignOut:()=>void;onSignOutAll:()=>void}) {
+  return <section className="cloud-section"><div className="account-identity"><div>{(props.session.user.email||"N").slice(0,1).toUpperCase()}</div><span><strong>{props.session.user.user_metadata.display_name||"Cuenta Nexus"}</strong><small>{props.session.user.email}</small></span></div><div className="sync-card"><i className={`sync-dot ${props.status}`}/><span><strong>{props.status==="synced"?"Todo sincronizado":props.status==="syncing"?"Guardando cambios…":props.status==="offline"?"Trabajando sin conexión":"Revisar conexión"}</strong><small>{props.status==="offline"?"Se sincronizará automáticamente al volver":`Última sincronización: ${readableDate(props.lastSync)}`}</small></span></div><p className="section-copy">Nexus guarda automáticamente películas, capítulos, maratones, preferencias y logros. No necesitas pulsar ningún botón.</p><button className="cloud-secondary" onClick={props.onSignOut}>Cerrar sesión en este dispositivo</button><button className="cloud-secondary" onClick={props.onSignOutAll}>Cerrar todas las sesiones</button></section>;
 }
 
 function ProfilesTab(props:{profiles:CloudProfile[];activeLocalId:string;onSwitch:(id:string)=>void;onVisibility:(profile:CloudProfile,visibility:CloudProfile["visibility"])=>void;onDelete:(profile:CloudProfile)=>void;name:string;avatar:string;color:string;child:boolean;onName:(v:string)=>void;onAvatar:(v:string)=>void;onColor:(v:string)=>void;onChild:(v:boolean)=>void;onCreate:()=>void;busy:boolean}) {
@@ -439,6 +424,6 @@ function DevicesTab({devices,currentId,onRevoke}:{devices:DeviceRecord[];current
   return <section className="cloud-section"><p className="section-copy">Aquí puedes reconocer y desvincular navegadores o computadoras. El progreso local del dispositivo no se borra al desvincularlo.</p><div className="device-list">{devices.map((device)=><article key={device.id}><i className={device.revoked_at?"revoked":""}/><span><strong>{device.name}{device.id===currentId?" · Este dispositivo":""}</strong><small>{device.platform} · Último uso {readableDate(device.last_seen_at)}</small></span>{device.id!==currentId&&!device.revoked_at&&<button onClick={()=>onRevoke(device.id)}>Desvincular</button>}</article>)}</div></section>;
 }
 
-function DataTab(props:{onExport:()=>void;onImport:(file:File)=>void;confirmation:string;onConfirmation:(v:string)=>void;onDelete:()=>void;busy:boolean}) {
-  return <section className="cloud-section"><div className="data-action"><h3>Exportar todos mis datos</h3><p>Descarga perfiles, progreso, listas, maratones, logros y una copia local legible.</p><button onClick={props.onExport}>Descargar JSON</button></div><div className="data-action"><h3>Importar una copia de Nexus 1.0</h3><p>La importación se aplica primero a este dispositivo para que puedas revisarla.</p><label className="file-button">Seleccionar archivo<input type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)props.onImport(file);}}/></label></div><div className="danger-zone"><h3>Eliminar la cuenta definitivamente</h3><p>Primero exporta una copia. Esta acción elimina cuenta, perfiles, progreso cloud, membresías y maratones propios.</p><label>Escribe <b>ELIMINAR</b><input value={props.confirmation} onChange={(event)=>props.onConfirmation(event.target.value)}/></label><button disabled={props.busy||props.confirmation!=="ELIMINAR"} onClick={props.onDelete}>Eliminar mi cuenta cloud</button></div></section>;
+function PrivacyTab(props:{confirmation:string;onConfirmation:(v:string)=>void;onDelete:()=>void;busy:boolean}) {
+  return <section className="cloud-section"><div className="danger-zone"><h3>Eliminar la cuenta definitivamente</h3><p>Esta acción elimina la cuenta, sus perfiles, el progreso sincronizado y los maratones propios.</p><label>Escribe <b>ELIMINAR</b><input value={props.confirmation} onChange={(event)=>props.onConfirmation(event.target.value)}/></label><button disabled={props.busy||props.confirmation!=="ELIMINAR"} onClick={props.onDelete}>Eliminar mi cuenta cloud</button></div></section>;
 }

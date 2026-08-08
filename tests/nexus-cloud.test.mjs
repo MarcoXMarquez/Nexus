@@ -29,3 +29,25 @@ test("Vercel and PWA handoff files are present", async () => {
   assert.match(deployment, /Vercel/i);
   assert.match(deployment, /Supabase/i);
 });
+
+test("the app starts behind an account or guest gate", async () => {
+  const page = await read("../app/page.tsx");
+  const gate = await read("../app/cloud/auth-gate.tsx");
+  assert.match(page, /AuthGate/);
+  assert.match(gate, /Iniciar sesión/);
+  assert.match(gate, /Seguir como invitado/);
+  assert.match(gate, /Regístrate/);
+});
+
+test("catalog progress is normalized and synchronized automatically", async () => {
+  const migration = await read("../supabase/migrations/202608080002_catalog_and_event_sync.sql");
+  const cloud = await read("../app/cloud/cloud-workspace.tsx");
+  const service = await read("../app/cloud/cloud-service.ts");
+  assert.match(migration, /create table if not exists public\.catalog_titles/i);
+  assert.match(migration, /create table if not exists public\.catalog_episodes/i);
+  assert.match(migration, /title_progress_catalog_fk/i);
+  assert.match(migration, /episode_progress_catalog_fk/i);
+  assert.match(cloud, /nexus:local-change/);
+  assert.match(service, /syncStructuredProfile/);
+  assert.doesNotMatch(cloud, /Sincronizar ahora/);
+});
