@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import ts from "typescript";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -50,4 +51,27 @@ test("catalog progress is normalized and synchronized automatically", async () =
   assert.match(cloud, /nexus:local-change/);
   assert.match(service, /syncStructuredProfile/);
   assert.doesNotMatch(cloud, /Sincronizar ahora/);
+});
+
+test("portable marathon codes preserve title order and reject tampering", async () => {
+  const source = await read("../app/features/marathon-code.ts");
+  const javascript = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const codec = await import(`data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`);
+  const original = { name: "Trilogía de Tobey", description: "En orden", tasks: [{ itemId: "spiderman-raimi-1" }, { itemId: "spiderman-raimi-2" }, { itemId: "spiderman-raimi-3" }] };
+  const code = codec.encodeMarathonCode(original);
+  const decoded = codec.decodeMarathonCode(code, new Set(original.tasks.map((task) => task.itemId)));
+  assert.match(code, /^NXS1\./);
+  assert.deepEqual(decoded.tasks.map((task) => task.itemId), original.tasks.map((task) => task.itemId));
+  assert.throws(() => codec.decodeMarathonCode(`${code.slice(0, -1)}X`), /modificado|incompleto/i);
+});
+
+test("profile management is replaced by the personal archive experience", async () => {
+  const renderer = await read("../desktop/renderer.tsx");
+  const workspace = await read("../app/cloud/cloud-workspace.tsx");
+  const discovery = await read("../app/features/discovery-hub.tsx");
+  assert.match(renderer, /function MyProfileView/);
+  assert.doesNotMatch(renderer, /Modo invitado/);
+  assert.doesNotMatch(renderer, /Crear perfil/);
+  assert.doesNotMatch(workspace, /id: "profiles"/);
+  for (const feature of ["Eras", "Viajes", "Cartas", "Pósteres", "Sala 3D", "Logros"]) assert.match(discovery, new RegExp(feature));
 });

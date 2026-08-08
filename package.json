@@ -25,11 +25,13 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
+    "@types/three": "^0.185.4",
     "drizzle-orm": "0.45.2",
     "idb": "^8.0.3",
     "next": "^16.3.0",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",

@@ -5,9 +5,7 @@ import type { Session } from "@supabase/supabase-js";
 import { MCU_ITEMS, POSTER_BY_WIKI } from "../mcu-data";
 import {
   acceptInvitation,
-  createCloudProfile,
   createInvitation,
-  deleteCloudProfile,
   listDevices,
   listMarathons,
   registerDevice,
@@ -20,7 +18,6 @@ import {
   syncLocalMarathons,
   syncProfile,
   syncStructuredProfile,
-  updateCloudProfile,
   uploadMarathon,
   upsertLocalProfiles,
 } from "./cloud-service";
@@ -29,7 +26,7 @@ import { LAST_SYNC_KEY, NEXUS_KEYS, PENDING_INVITE_KEY } from "./storage-keys";
 import { cloudConfigured, getSupabase } from "./supabase";
 import type { CloudMarathon, CloudProfile, DeviceRecord, LocalMarathon, LocalProfile, SyncState } from "./types";
 
-type CloudTab = "account" | "profiles" | "marathons" | "achievements" | "devices" | "privacy";
+type CloudTab = "account" | "marathons" | "achievements" | "devices" | "privacy";
 
 type Props = {
   open: boolean;
@@ -44,7 +41,6 @@ type Props = {
 
 const TAB_LABELS: Array<{ id: CloudTab; label: string }> = [
   { id: "account", label: "Cuenta" },
-  { id: "profiles", label: "Perfiles" },
   { id: "marathons", label: "Maratones" },
   { id: "achievements", label: "Logros" },
   { id: "devices", label: "Dispositivos" },
@@ -93,10 +89,6 @@ export function CloudWorkspace(props: Props) {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [inviteToken, setInviteToken] = useState(() => typeof window === "undefined" ? "" : localStorage.getItem(PENDING_INVITE_KEY) || "");
-  const [newProfileName, setNewProfileName] = useState("");
-  const [newProfileAvatar, setNewProfileAvatar] = useState("N");
-  const [newProfileColor, setNewProfileColor] = useState("#f2454b");
-  const [newProfileChild, setNewProfileChild] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const lastFingerprint = useRef("");
   const initializedAccount = useRef<string | null>(null);
@@ -268,31 +260,6 @@ export function CloudWorkspace(props: Props) {
     finally { setBusy(false); }
   }
 
-  async function addProfile() {
-    if (!session || !newProfileName.trim()) return;
-    setBusy(true);
-    try {
-      const created = await createCloudProfile(session, { name: newProfileName.trim(), avatar: newProfileAvatar.slice(0, 2).toUpperCase() || "N", color: newProfileColor, child: newProfileChild });
-      setProfiles((current) => [...current, created]);
-      props.onAddLocalProfile({ id: created.local_key, name: created.name, avatar: created.avatar, color: created.color, child: created.child_mode });
-      setNewProfileName(""); setNewProfileAvatar("N"); setNewProfileChild(false);
-      props.notify("Perfil creado y vinculado a tu cuenta");
-    } catch (error) { setMessage(errorMessage(error)); }
-    finally { setBusy(false); }
-  }
-
-  async function removeProfile(profile: CloudProfile) {
-    if (!confirm(`¿Eliminar el perfil ${profile.name} y todo su progreso cloud?`)) return;
-    setBusy(true);
-    try {
-      await deleteCloudProfile(profile.id);
-      setProfiles((current) => current.filter((entry) => entry.id !== profile.id));
-      props.onRemoveLocalProfile(profile.local_key);
-      props.notify("Perfil eliminado");
-    } catch (error) { setMessage(errorMessage(error)); }
-    finally { setBusy(false); }
-  }
-
   async function uploadLocalMarathon(marathon: LocalMarathon) {
     if (!activeCloudProfile) return;
     setBusy(true);
@@ -384,7 +351,6 @@ export function CloudWorkspace(props: Props) {
           <nav className="cloud-tabs">{TAB_LABELS.map((entry) => <button key={entry.id} className={tab === entry.id ? "active" : ""} onClick={() => setTab(entry.id)}>{entry.label}</button>)}</nav>
           <div className="cloud-panel-scroll">
             {tab === "account" && <AccountTab session={session} status={status} lastSync={lastSync} onSignOut={async () => { await signOut(); localStorage.removeItem("nexus-guest-entry-v1"); window.location.reload(); }} onSignOutAll={async () => { await signOut("global"); localStorage.removeItem("nexus-guest-entry-v1"); window.location.reload(); }} />}
-            {tab === "profiles" && <ProfilesTab profiles={profiles} activeLocalId={props.activeProfileId} onSwitch={props.onSwitchLocalProfile} onVisibility={async (profile, visibility) => { await updateCloudProfile(profile.id, { visibility }); setProfiles((current) => current.map((entry) => entry.id === profile.id ? { ...entry, visibility } : entry)); }} onDelete={removeProfile} name={newProfileName} avatar={newProfileAvatar} color={newProfileColor} child={newProfileChild} onName={setNewProfileName} onAvatar={setNewProfileAvatar} onColor={setNewProfileColor} onChild={setNewProfileChild} onCreate={addProfile} busy={busy} />}
             {tab === "marathons" && <MarathonsTab local={localMarathons()} cloud={marathons} inviteToken={inviteToken} onInviteToken={setInviteToken} onJoin={joinMarathon} onUpload={uploadLocalMarathon} onInvite={inviteTo} onCopy={importCloudMarathon} busy={busy} />}
             {tab === "achievements" && <AchievementsTab ids={unlockedAchievementIds()} profile={activeCloudProfile} />}
             {tab === "devices" && <DevicesTab devices={devices} currentId={getDeviceId()} onRevoke={async (id) => { await revokeDevice(id); if (session) setDevices(await listDevices(session)); }} />}
@@ -406,10 +372,6 @@ function AuthView(props: { mode:"signin"|"signup"|"recover"; onMode:(mode:"signi
 
 function AccountTab(props:{session:Session;status:SyncState;lastSync:string|null;onSignOut:()=>void;onSignOutAll:()=>void}) {
   return <section className="cloud-section"><div className="account-identity"><div>{(props.session.user.email||"N").slice(0,1).toUpperCase()}</div><span><strong>{props.session.user.user_metadata.display_name||"Cuenta Nexus"}</strong><small>{props.session.user.email}</small></span></div><div className="sync-card"><i className={`sync-dot ${props.status}`}/><span><strong>{props.status==="synced"?"Todo sincronizado":props.status==="syncing"?"Guardando cambios…":props.status==="offline"?"Trabajando sin conexión":"Revisar conexión"}</strong><small>{props.status==="offline"?"Se sincronizará automáticamente al volver":`Última sincronización: ${readableDate(props.lastSync)}`}</small></span></div><p className="section-copy">Nexus guarda automáticamente películas, capítulos, maratones, preferencias y logros. No necesitas pulsar ningún botón.</p><button className="cloud-secondary" onClick={props.onSignOut}>Cerrar sesión en este dispositivo</button><button className="cloud-secondary" onClick={props.onSignOutAll}>Cerrar todas las sesiones</button></section>;
-}
-
-function ProfilesTab(props:{profiles:CloudProfile[];activeLocalId:string;onSwitch:(id:string)=>void;onVisibility:(profile:CloudProfile,visibility:CloudProfile["visibility"])=>void;onDelete:(profile:CloudProfile)=>void;name:string;avatar:string;color:string;child:boolean;onName:(v:string)=>void;onAvatar:(v:string)=>void;onColor:(v:string)=>void;onChild:(v:boolean)=>void;onCreate:()=>void;busy:boolean}) {
-  return <section className="cloud-section"><div className="cloud-profile-grid">{props.profiles.map((profile)=><article key={profile.id} className={profile.local_key===props.activeLocalId?"active":""} style={{"--profile":profile.color} as React.CSSProperties}><div className="cloud-avatar">{profile.avatar}</div><span><strong>{profile.name}</strong><small>{profile.child_mode?"Perfil infantil":"Perfil estándar"}</small></span><select value={profile.visibility} onChange={(event)=>props.onVisibility(profile,event.target.value as CloudProfile["visibility"])}><option value="private">Privado</option><option value="shared">Con invitación</option><option value="public">Público</option></select><div className="cloud-profile-actions">{profile.local_key!==props.activeLocalId&&<button onClick={()=>props.onSwitch(profile.local_key)}>Usar</button>}{profile.visibility==="public"&&!profile.child_mode&&<button onClick={async()=>{await navigator.clipboard?.writeText(`${location.origin}/profile/${profile.id}`)}}>Compartir</button>}</div>{props.profiles.length>1&&<button className="danger-icon" onClick={()=>props.onDelete(profile)}>×</button>}</article>)}</div><div className="new-cloud-profile"><h3>Nuevo perfil</h3><div><input placeholder="Nombre" value={props.name} onChange={(event)=>props.onName(event.target.value)}/><input className="avatar-field" maxLength={2} value={props.avatar} onChange={(event)=>props.onAvatar(event.target.value)}/><input type="color" value={props.color} onChange={(event)=>props.onColor(event.target.value)}/><label><input type="checkbox" checked={props.child} onChange={(event)=>props.onChild(event.target.checked)}/> Infantil</label><button onClick={props.onCreate} disabled={props.busy||!props.name.trim()}>Crear perfil</button></div></div></section>;
 }
 
 function MarathonsTab(props:{local:LocalMarathon[];cloud:CloudMarathon[];inviteToken:string;onInviteToken:(v:string)=>void;onJoin:()=>void;onUpload:(m:LocalMarathon)=>void;onInvite:(m:CloudMarathon)=>void;onCopy:(m:CloudMarathon)=>void;busy:boolean}) {
