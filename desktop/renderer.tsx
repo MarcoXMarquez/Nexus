@@ -11,7 +11,7 @@ import { decodeMarathonCode, encodeMarathonCode } from "../app/features/marathon
 
 type EpisodeState = Record<string, number[]>;
 type MapItem = MCUItem & { releaseValue: number; trackId: string; order: number };
-type AppView = "dashboard" | "map" | "explore" | "routes" | "planner" | "calendar" | "list" | "profiles";
+type AppView = "dashboard" | "map" | "list" | "routes" | "planner" | "explore" | "calendar" | "achievements" | "profiles";
 type Intent = "chronological" | "movies" | "series" | "short" | "new-line" | "random";
 type Recommendation = { item: MapItem; reason: string };
 type IconName = "search" | "target" | "minus" | "plus" | "fit" | "check" | "film" | "route" | "download" | "upload" | "close" | "chevron" | "home" | "bookmark" | "eye" | "shuffle" | "clock" | "spark" | "bar" | "calendar" | "user" | "star" | "note" | "bell" | "settings" | "trophy" | "share" | "grip";
@@ -71,20 +71,20 @@ const INTENTS: { id: Intent; label: string; hint: string }[] = [
 ];
 
 const TRACKS = [
+  { id: "tobey", label: "Sony Pictures · Spider-Man de Sam Raimi", short: "Raimi", color: "#f24e86" },
+  { id: "andrew", label: "Sony Pictures · The Amazing Spider-Man", short: "Amazing", color: "#9c70ff" },
+  { id: "sony", label: "Sony’s Spider-Man Universe", short: "Sony", color: "#c757e7" },
+  { id: "xmen", label: "20th Century · Universo X-Men", short: "X-Men", color: "#3b88ff" },
+  { id: "fantastic", label: "Fantastic Four · Universos heredados", short: "Fantastic Four", color: "#ffb640" },
+  { id: "other", label: "Marvel · Universos heredados", short: "Otros legados", color: "#ff793f" },
+  { id: "defenders", label: "Marvel Television · The Defenders Saga", short: "Defenders", color: "#d94a42" },
+  { id: "mcu", label: "Marvel Studios · Películas del UCM", short: "UCM películas", color: "#f24545" },
+  { id: "series", label: "Marvel Studios · Series y especiales del UCM", short: "UCM series", color: "#58cf83" },
   { id: "animation", label: "Marvel Animation · Multiverso del UCM", short: "Marvel animado", color: "#25d0dd" },
   { id: "animation-xmen", label: "Marvel Animation · Legado de X-Men", short: "X-Men animado", color: "#6ca4ff" },
   { id: "animation-spider", label: "Spider-Man · universos animados", short: "Spider-Man animado", color: "#f05b8d" },
   { id: "animation-teams", label: "Marvel Animation · Héroes y equipos", short: "Equipos animados", color: "#f2a53a" },
   { id: "animation-films", label: "Marvel · Películas animadas", short: "Películas animadas", color: "#58cfb5" },
-  { id: "defenders", label: "Marvel Television · The Defenders Saga", short: "Defenders", color: "#d94a42" },
-  { id: "xmen", label: "20th Century · Universo X-Men", short: "X-Men", color: "#3b88ff" },
-  { id: "fantastic", label: "Fantastic Four · Universos heredados", short: "Fantastic Four", color: "#ffb640" },
-  { id: "other", label: "Marvel · Universos heredados", short: "Otros legados", color: "#ff793f" },
-  { id: "tobey", label: "Sony Pictures · Spider-Man de Sam Raimi", short: "Raimi", color: "#f24e86" },
-  { id: "andrew", label: "Sony Pictures · The Amazing Spider-Man", short: "Amazing", color: "#9c70ff" },
-  { id: "sony", label: "Sony’s Spider-Man Universe", short: "Sony", color: "#c757e7" },
-  { id: "mcu", label: "Marvel Studios · Películas del UCM", short: "UCM películas", color: "#f24545" },
-  { id: "series", label: "Marvel Studios · Series y especiales del UCM", short: "UCM series", color: "#58cf83" },
 ] as const;
 
 const ERAS = [
@@ -382,6 +382,7 @@ export function App() {
   const [zooming, setZooming] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [achievementRecords, setAchievementRecords] = useState<Record<string, AchievementRecord>>(() => { try { return JSON.parse(localStorage.getItem(ACHIEVEMENT_RECORDS_KEY) || "{}"); } catch { return {}; } });
+  const [achievementActivityVersion,setAchievementActivityVersion]=useState(0);
   const [randomSeed, setRandomSeed] = useState(0);
   const [pendingMapItem, setPendingMapItem] = useState<MapItem | null>(null);
   const [routeFocus, setRouteFocus] = useState<Set<string>>(new Set());
@@ -392,6 +393,7 @@ export function App() {
   });
   const [activeProfileId, setActiveProfileId] = useState(() => localStorage.getItem(ACTIVE_PROFILE_KEY) || "principal");
   const viewportRef = useRef<HTMLDivElement>(null);
+  const mapInitializedRef = useRef(false);
   const dragRef = useRef({ x: 0, y: 0, left: 0, top: 0 });
   const toastTimer = useRef<number | null>(null);
   const zoomTimer = useRef<number | null>(null);
@@ -417,9 +419,13 @@ export function App() {
   }, [preferences, spoilerSafe]);
   useEffect(() => {
     const openCloud = () => setCloudOpen(true);
+    const openAchievements = () => { setSelected(null); setView("achievements"); };
+    const refreshAchievements = (event:Event) => { if ((event as CustomEvent<{kind?:string}>).detail?.kind === "achievement") setAchievementActivityVersion((value)=>value+1); };
     window.addEventListener("nexus:open-cloud", openCloud);
+    window.addEventListener("nexus:open-achievements", openAchievements);
+    window.addEventListener("nexus:local-change", refreshAchievements);
     if (localStorage.getItem("nexus-cloud-pending-invite-v1")) setCloudOpen(true);
-    return () => window.removeEventListener("nexus:open-cloud", openCloud);
+    return () => { window.removeEventListener("nexus:open-cloud", openCloud); window.removeEventListener("nexus:open-achievements", openAchievements); window.removeEventListener("nexus:local-change", refreshAchievements); };
   }, []);
   useEffect(() => {
     if (window.nexusDesktop || !("serviceWorker" in navigator)) return;
@@ -544,13 +550,17 @@ export function App() {
   void legacyAchievements;
 
   const achievements = useMemo<Achievement[]>(() => {
-    let marathonCount=0; try { marathonCount=JSON.parse(localStorage.getItem(CUSTOM_MARATHONS_KEY)||"[]").length; } catch {}
+    let customMarathons:SharedMarathon[]=[]; try { customMarathons=JSON.parse(localStorage.getItem(CUSTOM_MARATHONS_KEY)||"[]"); } catch {}
+    const marathonCount=customMarathons.length;
     const completedTracks=TRACKS.filter((track)=>{const entries=releasedItems.filter((item)=>item.trackId===track.id);return entries.length>0&&entries.every((item)=>watched.has(item.id));}).length;
     const phases=[...new Set(releasedItems.map((item)=>item.phase).filter(Boolean))];
     const completedPhases=phases.filter((phase)=>releasedItems.filter((item)=>item.phase===phase).every((item)=>watched.has(item.id))).length;
     const rated=Object.keys(ratings).length;
     const rewatchTotal=Object.values(rewatches).reduce((sum,value)=>sum+value,0);
     const notesTotal=Object.values(notes).filter((value)=>value.trim()).length;
+    const marathonCodeUsed=localStorage.getItem("nexus-achievement-marathon-code-v1")==="true";
+    const sharedMarathonComplete=customMarathons.some((marathon)=>marathon.tasks.length>0&&marathon.tasks.every((task)=>task.episode?(episodes[task.itemId]||[]).includes(task.episode):watched.has(task.itemId)));
+    const spoilerSafeRouteComplete=spoilerSafe&&["endgame","no-way-home"].some((target)=>dependencyRoute(target,false).every((item)=>watched.has(item.id)));
     const releasedIds=releasedItems.map((item)=>item.id);
     const trackIds=(trackId:string)=>releasedItems.filter((item)=>item.trackId===trackId).map((item)=>item.id);
     const validIds=(ids:string[])=>ids.filter((id,index)=>ITEM_BY_ID.has(id)&&ids.indexOf(id)===index);
@@ -618,17 +628,20 @@ export function App() {
       route("every-frame","Cada fotograma, un universo","Completa todo el catálogo animado estrenado",releasedItems.filter((item)=>item.type==="animation").map((item)=>item.id),"Diamante","film",2),
 
       metric("showrunner","Director de funciones","Crea tu primer maratón personalizado",marathonCount,1,"Bronce","calendar"),
+      metric("code-between-worlds","Código entre universos","Comparte o importa un código de maratón",marathonCodeUsed?1:0,1,"Plata","share"),
+      metric("together-now","Todos juntos ahora","Completa un maratón creado o compartido",sharedMarathonComplete?1:0,1,"Oro","trophy"),
       metric("multiverse-critic","Crítico del multiverso","Califica 25 títulos",rated,25,"Plata","star"),
       metric("one-more-time","Una vez más","Registra 10 repeticiones",rewatchTotal,10,"Oro","shuffle"),
       metric("watcher-notes","Notas del Vigilante","Escribe notas en 25 títulos",notesTotal,25,"Plata","note"),
       metric("reality-curator","Curador de realidades","Desbloquea 50 pósteres digitales",watched.size,50,"Oro","bookmark"),
       route("multiverse-museum","Museo del multiverso","Completa la colección digital estrenada",releasedIds,"Diamante","trophy",2),
+      metric("sorcerer-oath","Juramento del hechicero","Completa una ruta esencial manteniendo la protección de spoilers",spoilerSafeRouteComplete?1:0,1,"Plata","eye"),
       route("portals-open","Los portales están abiertos","Completa la ruta narrativa hasta Endgame",dependencyRoute("endgame").map((item)=>item.id),"Oro","route"),
       route("multiverse-visitors","Visitantes de otros universos","Completa la ruta narrativa hasta No Way Home",dependencyRoute("no-way-home").map((item)=>item.id),"Oro","route"),
       route("ready-doomsday","Preparado para el fin","Completa la ruta requerida de Doomsday cuando se estrene",dependencyRoute("doomsday").map((item)=>item.id),"Diamante","target",2),
       route("battleworld-destiny","Destino: Battleworld","Completa la ruta requerida de Secret Wars cuando se estrene",dependencyRoute("secret-wars").map((item)=>item.id),"Diamante","route",2),
     ];
-  }, [achievementRecords, customLists.length, history, notes, ratings, releasedItems, rewatches, watched]);
+  }, [achievementActivityVersion, achievementRecords, customLists.length, episodes, history, notes, ratings, releasedItems, rewatches, spoilerSafe, watched]);
   const labelLayout = useMemo(() => {
     const result = new Map<string, { below: boolean; offset: number; shift: number; leaderLength: number; leaderAngle: number }>();
     // Keep collision packing in lockstep with the final card widths in styles.css.
@@ -725,6 +738,19 @@ export function App() {
     requestAnimationFrame(() => viewport.scrollTo({ left: 0, top: Math.max(0, verticalMetrics(next).height - viewport.clientHeight) / 2, behavior: "smooth" }));
   }, []);
 
+  const focusMcu = useCallback(() => {
+    const viewport = viewportRef.current;
+    const anchor = ITEM_BY_ID.get("iron-man");
+    if (!viewport || !anchor) return;
+    const next = 0.46;
+    setZoom(next);
+    requestAnimationFrame(() => viewport.scrollTo({
+      left: Math.max(0, xOf(anchor.releaseValue) * next - viewport.clientWidth * .34),
+      top: Math.max(0, yOfTrack("mcu", next) - viewport.clientHeight * .48),
+      behavior: preferences.reduceMotion ? "auto" : "smooth",
+    }));
+  }, [preferences.reduceMotion]);
+
   const changeZoom = useCallback((nextValue: number, clientX?: number, clientY?: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -782,8 +808,8 @@ export function App() {
         event.preventDefault(); setGlobalIndex((index) => Math.max(0, index - 1));
       } else if (globalSearchOpen && event.key === "Enter" && globalHits[globalIndex]) {
         event.preventDefault(); openGlobalHit(globalHits[globalIndex]);
-      } else if (event.altKey && /^[1-8]$/.test(event.key)) {
-        event.preventDefault(); setSelected(null); setView((["dashboard","map","explore","routes","planner","calendar","list","profiles"] as AppView[])[Number(event.key) - 1]);
+      } else if (event.altKey && /^[1-9]$/.test(event.key)) {
+        event.preventDefault(); setSelected(null); setView((["dashboard","map","list","routes","planner","explore","calendar","achievements","profiles"] as AppView[])[Number(event.key) - 1]);
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
         if (view === "map") document.querySelector<HTMLInputElement>("#map-search")?.focus(); else setGlobalSearchOpen(true);
@@ -797,10 +823,11 @@ export function App() {
   }, [changeZoom, fitMap, globalHits, globalIndex, globalSearchOpen, openGlobalHit, view, zoom]);
 
   useEffect(() => {
-    if (view !== "map") return;
-    const timer = window.setTimeout(fitMap, 80);
+    if (view !== "map" || mapInitializedRef.current) return;
+    mapInitializedRef.current = true;
+    const timer = window.setTimeout(focusMcu, 90);
     return () => window.clearTimeout(timer);
-  }, [fitMap, view]);
+  }, [focusMcu, view]);
 
   useEffect(() => {
     if (view !== "map" || !pendingMapItem) return;
@@ -1036,13 +1063,18 @@ export function App() {
       <div className="native-titlebar"><div className="titlebar-brand"><span>N</span><strong>NEXUS</strong><small>MAPA DEL MULTIVERSO</small></div></div>
       <aside className="map-sidebar">
         <nav className="app-nav" aria-label="Navegación principal">
+          <span className="nav-group-label">Principal</span>
           <button className={view === "dashboard" ? "active" : ""} onClick={() => { setSelected(null); setView("dashboard"); }}><Icon name="home"/><span><strong>Inicio</strong><small>Qué ver ahora</small></span></button>
           <button className={view === "map" ? "active" : ""} onClick={() => setView("map")}><Icon name="route"/><span><strong>Mapa</strong><small>Explorar universos</small></span></button>
-          <button className={view === "explore" ? "active" : ""} onClick={() => { setSelected(null); setView("explore"); }}><Icon name="trophy"/><span><strong>Archivo Nexus</strong><small>Eras y colección</small></span></button>
+          <button className={view === "list" ? "active" : ""} onClick={() => { setSelected(null); setView("list"); }}><Icon name="bookmark"/><span><strong>Biblioteca</strong><small>{watchlist.size + favorites.size} personales</small></span></button>
+          <span className="nav-group-label">Planificar</span>
           <button className={view === "routes" ? "active" : ""} onClick={() => { setSelected(null); setView("routes"); }}><Icon name="shuffle"/><span><strong>Órdenes y rutas</strong><small>Cómo verlo</small></span></button>
           <button className={view === "planner" ? "active" : ""} onClick={() => { setSelected(null); setView("planner"); }}><Icon name="calendar"/><span><strong>Maratón</strong><small>Planificar sesiones</small></span></button>
+          <span className="nav-group-label">Descubrir</span>
+          <button className={view === "explore" ? "active" : ""} onClick={() => { setSelected(null); setView("explore"); }}><Icon name="film"/><span><strong>Archivo Nexus</strong><small>Eras y colección</small></span></button>
           <button className={view === "calendar" ? "active" : ""} onClick={() => { setSelected(null); setView("calendar"); }}><Icon name="bell"/><span><strong>Estrenos</strong><small>Calendario Marvel</small></span></button>
-          <button className={view === "list" ? "active" : ""} onClick={() => { setSelected(null); setView("list"); }}><Icon name="bookmark"/><span><strong>Biblioteca</strong><small>{watchlist.size + favorites.size} personales</small></span></button>
+          <button className={view === "achievements" ? "active" : ""} onClick={() => { setSelected(null); setView("achievements"); }}><Icon name="trophy"/><span><strong>Logros</strong><small>{achievements.filter((entry)=>entry.unlocked).length}/{achievements.length} desbloqueados</small></span></button>
+          <span className="nav-group-label">Cuenta</span>
           <button className={view === "profiles" ? "active" : ""} onClick={() => { setSelected(null); setView("profiles"); }}><Icon name="user"/><span><strong>Mi perfil</strong><small>Actividad y estadísticas</small></span></button>
         </nav>
         <section className="journey-card">
@@ -1074,7 +1106,7 @@ export function App() {
           <button onClick={() => setSettingsOpen(true)}><Icon name="settings"/>Apariencia y acceso</button>
           <a className="tmdb-credit" href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">Arte de títulos proporcionado por TMDB</a>
         </div>
-        <div className="keyboard-hint"><kbd>Ctrl</kbd><kbd>K</kbd><span>buscar todo</span><kbd>Alt</kbd><kbd>1–8</kbd><span>secciones</span></div>
+        <div className="keyboard-hint"><kbd>Ctrl</kbd><kbd>K</kbd><span>buscar todo</span><kbd>Alt</kbd><kbd>1–9</kbd><span>secciones</span></div>
       </aside>
 
       {view === "map" ? <section className="map-workspace">
@@ -1087,10 +1119,11 @@ export function App() {
           </div>
           {routeTarget ? <div className="route-focus-banner"><Icon name="route"/><span><small>Ruta revelada</small><strong>{routeTarget.title} · {routeFocus.size} títulos</strong></span><button onClick={() => { setRouteFocus(new Set()); setRouteTarget(null); }}><Icon name="close" size={14}/></button></div> : <div className="era-nav">{ERAS.map((era) => <button key={era.label} onClick={() => jumpToYear(era.year)}>{era.label}</button>)}</div>}
           <div className="zoom-tools">
+            <button className="map-focus-button" title="Enfocar el inicio del UCM" onClick={focusMcu}>UCM</button>
             <button title="Alejar" onClick={() => changeZoom(zoom - .1)}><Icon name="minus"/></button>
             <span>{Math.round(zoom * 100)}%</span>
             <button title="Acercar" onClick={() => changeZoom(zoom + .1)}><Icon name="plus"/></button>
-            <button title="Encajar todo (F)" onClick={fitMap}><Icon name="fit"/></button>
+            <button title="Ver todo el multiverso (F)" onClick={fitMap}><Icon name="fit"/></button>
           </div>
         </header>
 
@@ -1156,7 +1189,8 @@ export function App() {
         onOpenDetail={setSelected}
         onOpenMap={openInMap}
         onToggleSpoilers={() => setSpoilerSafe((value) => !value)}
-      /> : view === "explore" ? <DiscoveryHub items={releasedItems.map((item):DiscoveryItem=>({id:item.id,title:item.title,year:Math.floor(item.releaseValue),type:item.type,saga:item.saga||trackForId(item.trackId)?.short||"Marvel",poster:posterFor(item,"card"),backdrop:artworkFor(item,"hero")}))} watched={watched} onOpen={(id)=>{const item=ITEM_BY_ID.get(id);if(item)setSelected(item);}}/> : view === "routes" ? <RoutesView watched={watched} onOpenDetail={setSelected} onOpenMap={openInMap} onShowRoute={showRouteInMap} /> : view === "planner" ? <MarathonPlanner watched={watched} episodes={episodes} author={activeProfile?.name||"Nexus"} onToggleWatched={toggleWatched} onToggleEpisode={toggleEpisode} onOpenDetail={setSelected} notify={notify}/> : view === "calendar" ? <MarvelCalendar onOpenDetail={setSelected} notify={notify}/> : view === "profiles" ? <MyProfileView profile={activeProfile} watched={watched} ratings={ratings} favorites={favorites} history={history} rewatches={rewatches} achievements={preferences.achievements ? achievements : []} episodeCount={stats.episodeDone} completedLines={stats.completedLines} onOpenCollection={()=>setView("explore")} onOpenAchievementRoute={showAchievementRoute}/> : <ListView
+        onOpenAchievements={() => setView("achievements")}
+      /> : view === "explore" ? <DiscoveryHub items={releasedItems.map((item):DiscoveryItem=>({id:item.id,title:item.title,year:Math.floor(item.releaseValue),type:item.type,saga:item.saga||trackForId(item.trackId)?.short||"Marvel",poster:posterFor(item,"card"),backdrop:artworkFor(item,"hero")}))} watched={watched} onOpen={(id)=>{const item=ITEM_BY_ID.get(id);if(item)setSelected(item);}}/> : view === "routes" ? <RoutesView watched={watched} onOpenDetail={setSelected} onOpenMap={openInMap} onShowRoute={showRouteInMap} /> : view === "planner" ? <MarathonPlanner watched={watched} episodes={episodes} author={activeProfile?.name||"Nexus"} onToggleWatched={toggleWatched} onToggleEpisode={toggleEpisode} onOpenDetail={setSelected} notify={notify}/> : view === "calendar" ? <MarvelCalendar onOpenDetail={setSelected} notify={notify}/> : view === "achievements" ? <AchievementsView achievements={preferences.achievements ? achievements : []} watched={watched} onOpenRoute={showAchievementRoute}/> : view === "profiles" ? <MyProfileView profile={activeProfile} watched={watched} ratings={ratings} favorites={favorites} history={history} rewatches={rewatches} achievements={preferences.achievements ? achievements : []} episodeCount={stats.episodeDone} completedLines={stats.completedLines} onOpenCollection={()=>setView("explore")} onOpenAchievements={()=>setView("achievements")} onOpenAchievementRoute={showAchievementRoute}/> : <ListView
         watchlist={watchlist}
         ignored={ignored}
         favorites={favorites}
@@ -1170,6 +1204,8 @@ export function App() {
         onRestore={restoreItem}
         onOpenDetail={setSelected}
         onOpenMap={openInMap}
+        onBrowseMap={() => setView("map")}
+        onBrowseRecommendations={() => setView("dashboard")}
       />}
 
       {selected && <DetailPanel item={selected} mode={detailMode} pinned={detailPinned} watched={watched.has(selected.id)} episodes={episodes[selected.id] || []} saved={watchlist.has(selected.id)} ignored={ignored.has(selected.id)} favorite={favorites.has(selected.id)} rating={ratings[selected.id] || 0} note={notes[selected.id] || ""} watchedDate={watchedDates[selected.id] || ""} rewatchCount={rewatches[selected.id] || 0} customLists={customLists} onClose={() => { setSelected(null); setDetailPinned(false); }} onMode={setDetailMode} onPinned={() => setDetailPinned((value)=>!value)} onToggleWatched={() => toggleWatched(selected)} onToggleEpisode={(episode) => toggleEpisode(selected, episode)} onToggleWatchlist={() => toggleWatchlist(selected)} onToggleFavorite={() => toggleFavorite(selected)} onRate={(value) => rateItem(selected, value)} onSaveNote={(value) => saveNote(selected, value)} onWatchedDate={(value) => setWatchedDates((current) => ({ ...current, [selected.id]: value }))} onRewatch={() => registerRewatch(selected)} onAddToList={(listId) => addToCustomList(selected, listId)} onIgnore={() => ignored.has(selected.id) ? restoreItem(selected) : ignoreItem(selected)} onNavigate={(id) => { const target = ITEM_BY_ID.get(id); if (target) setSelected(target); }} onShowRoute={(includeContext) => showRouteInMap(selected, includeContext)} />}
@@ -1212,9 +1248,11 @@ type DashboardProps = {
   onOpenDetail: (item: MapItem) => void;
   onOpenMap: (item: MapItem) => void;
   onToggleSpoilers: () => void;
+  onOpenAchievements: () => void;
 };
 
 function Dashboard(props: DashboardProps) {
+  const [filtersOpen,setFiltersOpen]=useState(false);
   const { continueItem, episodes, watched } = props;
   const continueTotal = continueItem ? EPISODE_COUNTS[continueItem.id] || 0 : 0;
   const continueDone = continueItem ? episodes[continueItem.id]?.length || 0 : 0;
@@ -1258,19 +1296,24 @@ function Dashboard(props: DashboardProps) {
         </section>
       </div>
 
-      <section className="dashboard-section">
+      <section className="dashboard-section recommendations-section">
+        <div className="dashboard-section-head"><div><span className="dash-eyebrow">Selección explicada</span><h2>Recomendado para ti</h2></div><small>Ordenado según tu intención</small></div>
+        {props.recommendations.length ? <div className="recommendation-grid">{props.recommendations.map((entry, index) => <RecommendationCard key={entry.item.id} recommendation={entry} index={index} episodes={episodes} saved={props.watchlist.has(entry.item.id)} onOpen={() => props.onOpenDetail(entry.item)} onMap={() => props.onOpenMap(entry.item)} onSave={() => props.onToggleWatchlist(entry.item)} onIgnore={() => props.onIgnore(entry.item)}/>)}</div> : <div className="empty-recommendations"><Icon name="check"/><h3>No quedan títulos con estos filtros</h3><p>Prueba otra intención o activa más líneas.</p></div>}
+      </section>
+
+      <section className="recommendation-settings">
+        <button className="recommendation-settings-toggle" aria-expanded={filtersOpen} onClick={()=>setFiltersOpen((value)=>!value)}><span><Icon name="settings"/><span><strong>Ajustar recomendaciones</strong><small>{props.favoriteTracks.size || TRACKS.length} líneas · {INTENTS.find((entry)=>entry.id===props.intent)?.label}</small></span></span><Icon name={filtersOpen ? "minus" : "plus"}/></button>
+        {filtersOpen&&<div className="recommendation-settings-panel">
+      <section className="dashboard-section filter-section">
         <div className="dashboard-section-head"><div><span className="dash-eyebrow">Personaliza la ruta</span><h2>¿Qué líneas quieres recorrer?</h2></div><small>{props.favoriteTracks.size ? `${props.favoriteTracks.size} seleccionadas` : "Ninguna seleccionada: se usan todas"}</small></div>
         <div className="line-picker">{TRACKS.map((track) => <button key={track.id} className={props.favoriteTracks.has(track.id) ? "selected" : ""} onClick={() => props.onToggleTrack(track.id)} aria-pressed={props.favoriteTracks.has(track.id)} style={{ "--line-color": track.color } as React.CSSProperties}><i/><span>{track.short}</span><b>{ITEMS.filter((item) => item.trackId === track.id).length}</b></button>)}</div>
       </section>
 
-      <section className="dashboard-section">
+      <section className="dashboard-section filter-section">
         <div className="dashboard-section-head"><div><span className="dash-eyebrow">Modo de recomendación</span><h2>¿Qué te apetece?</h2></div>{props.intent === "random" && <button className="refresh-random" onClick={props.onRefreshRandom}><Icon name="shuffle"/>Volver a elegir</button>}</div>
         <div className="intent-picker">{INTENTS.map((entry) => <button key={entry.id} className={props.intent === entry.id ? "selected" : ""} onClick={() => props.onIntent(entry.id)}><Icon name={entry.id === "random" ? "shuffle" : entry.id === "short" ? "clock" : entry.id === "new-line" ? "route" : entry.id === "series" ? "bar" : "film"}/><span><strong>{entry.label}</strong><small>{entry.hint}</small></span></button>)}</div>
       </section>
-
-      <section className="dashboard-section recommendations-section">
-        <div className="dashboard-section-head"><div><span className="dash-eyebrow">Selección explicada</span><h2>Recomendado para ti</h2></div><small>Ordenado según tu intención</small></div>
-        {props.recommendations.length ? <div className="recommendation-grid">{props.recommendations.map((entry, index) => <RecommendationCard key={entry.item.id} recommendation={entry} index={index} episodes={episodes} saved={props.watchlist.has(entry.item.id)} onOpen={() => props.onOpenDetail(entry.item)} onMap={() => props.onOpenMap(entry.item)} onSave={() => props.onToggleWatchlist(entry.item)} onIgnore={() => props.onIgnore(entry.item)}/>)}</div> : <div className="empty-recommendations"><Icon name="check"/><h3>No quedan títulos con estos filtros</h3><p>Prueba otra intención o activa más líneas.</p></div>}
+        </div>}
       </section>
 
       <section className="dashboard-section progress-summary">
@@ -1279,7 +1322,7 @@ function Dashboard(props: DashboardProps) {
           <div><Icon name="film"/><span><strong>{props.stats.moviesCompleted}</strong><small>películas y especiales</small></span></div>
           <div><Icon name="bar"/><span><strong>{props.stats.seriesCompleted}</strong><small>series terminadas</small></span></div>
           <div><Icon name="check"/><span><strong>{props.stats.episodeDone}</strong><small>capítulos vistos</small></span></div>
-          <div><Icon name="route"/><span><strong>{props.stats.completedLines}/{TRACKS.length}</strong><small>líneas completadas</small></span></div>
+          <button onClick={props.onOpenAchievements}><Icon name="trophy"/><span><strong>Ver logros</strong><small>retos y recompensas</small></span></button>
           <div><Icon name="clock"/><span><strong>{formatMinutes(props.stats.remainingMinutes)}</strong><small>tiempo restante</small></span></div>
           <div><Icon name="target"/><span><strong>{bestTrackLabel}</strong><small>universo más avanzado</small></span></div>
           <div className="last-activity"><Icon name="spark"/><span><strong>{props.stats.lastItem?.title || "Aún sin actividad"}</strong><small>última actividad</small></span></div>
@@ -1463,8 +1506,8 @@ function CustomMarathonBuilder({ author, onOpenDetail, notify }: { author:string
   const move=(from:number,to:number)=>{ if(to<0||to>=tasks.length)return; setTasks((current)=>{const next=[...current];const [entry]=next.splice(from,1);next.splice(to,0,entry);return next;}); };
   const payload=():SharedMarathon=>({version:1,id:`marathon-${Date.now()}`,name:name.trim()||"Maratón sin nombre",description:description.trim(),createdAt:new Date().toISOString(),author,tasks,coverIds:[...new Set(tasks.map((task)=>task.itemId))].slice(0,4)});
   const save=()=>{ if(!tasks.length){notify("Añade al menos un título");return;} const marathon=payload(); setSaved((current)=>[marathon,...current.filter((entry)=>entry.name!==marathon.name)]);notify("Maratón guardado"); };
-  const copyCode=async()=>{if(!tasks.length){notify("Añade contenido antes de crear el código");return;}try{const code=encodeMarathonCode(payload());setMarathonCode(code);await navigator.clipboard?.writeText(code);notify("Código Nexus copiado");}catch(error){notify(error instanceof Error?error.message:"No se pudo crear el código");}};
-  const importCode=()=>{try{const decoded=decodeMarathonCode(marathonCode,new Set(ITEMS.map((item)=>item.id)));for(const task of decoded.tasks){if(task.episode&&task.episode>(EPISODE_COUNTS[task.itemId]||0))throw new Error(`El capítulo ${task.episode} no existe en ${ITEM_BY_ID.get(task.itemId)?.title||task.itemId}.`);}const imported:SharedMarathon={version:1,id:`imported-${Date.now()}`,name:decoded.name,description:decoded.description,createdAt:new Date().toISOString(),author:"Código Nexus",tasks:decoded.tasks,coverIds:[...new Set(decoded.tasks.map((task)=>task.itemId))].slice(0,4)};setSaved((current)=>[imported,...current]);setName(imported.name);setDescription(imported.description);setTasks(imported.tasks);notify(`Importado: ${imported.name}`);}catch(error){notify(error instanceof Error?error.message:"Código de maratón inválido");}};
+  const copyCode=async()=>{if(!tasks.length){notify("Añade contenido antes de crear el código");return;}try{const code=encodeMarathonCode(payload());setMarathonCode(code);localStorage.setItem("nexus-achievement-marathon-code-v1","true");window.dispatchEvent(new CustomEvent("nexus:local-change",{detail:{kind:"achievement"}}));await navigator.clipboard?.writeText(code);notify("Código Nexus copiado");}catch(error){notify(error instanceof Error?error.message:"No se pudo crear el código");}};
+  const importCode=()=>{try{const decoded=decodeMarathonCode(marathonCode,new Set(ITEMS.map((item)=>item.id)));for(const task of decoded.tasks){if(task.episode&&task.episode>(EPISODE_COUNTS[task.itemId]||0))throw new Error(`El capítulo ${task.episode} no existe en ${ITEM_BY_ID.get(task.itemId)?.title||task.itemId}.`);}const imported:SharedMarathon={version:1,id:`imported-${Date.now()}`,name:decoded.name,description:decoded.description,createdAt:new Date().toISOString(),author:"Código Nexus",tasks:decoded.tasks,coverIds:[...new Set(decoded.tasks.map((task)=>task.itemId))].slice(0,4)};setSaved((current)=>[imported,...current]);setName(imported.name);setDescription(imported.description);setTasks(imported.tasks);localStorage.setItem("nexus-achievement-marathon-code-v1","true");window.dispatchEvent(new CustomEvent("nexus:local-change",{detail:{kind:"achievement"}}));notify(`Importado: ${imported.name}`);}catch(error){notify(error instanceof Error?error.message:"Código de maratón inválido");}};
   const load=(marathon:SharedMarathon)=>{setName(marathon.name);setDescription(marathon.description);setTasks(marathon.tasks);notify("Maratón abierto en el editor");};
   return <section className="custom-marathon"><header className="custom-marathon-intro"><div><span className="dash-eyebrow">Constructor visual</span><h2>Crea una ruta para tu grupo</h2><p>Elige películas o capítulos, ordénalos y compártelos como un código Nexus que no contiene datos personales.</p></div><div><button className="share-marathon" onClick={copyCode}><Icon name="share"/>Copiar código</button></div></header><section className="marathon-code-panel"><div><span className="dash-eyebrow">CÓDIGO PORTABLE NXS1</span><strong>Comparte el maratón sin archivos ni enlaces</strong><small>El código conserva nombre, títulos, capítulos y orden.</small></div><textarea value={marathonCode} onChange={(event)=>setMarathonCode(event.target.value)} placeholder="Pega aquí un código NXS1…" spellCheck={false}/><button onClick={importCode} disabled={!marathonCode.trim()}><Icon name="upload"/>Importar código</button></section><div className="builder-grid"><aside className="builder-catalog"><label><Icon name="search"/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Buscar títulos o universos…"/></label>{results.length?<div className="builder-results">{results.map((item)=>{const total=EPISODE_COUNTS[item.id]||0;const episode=episodeChoice[item.id]||1;return <article key={item.id} style={mediaStyle(item)}><img src={posterFor(item,"thumb")} alt=""/><div><small>{TYPE_LABEL[item.type]} · {trackForId(item.trackId)?.short}</small><strong>{item.title}</strong>{total?<span><select value={episode} onChange={(event)=>setEpisodeChoice((current)=>({...current,[item.id]:Number(event.target.value)}))}>{Array.from({length:total},(_,index)=><option value={index+1} key={index}>Capítulo {index+1}</option>)}</select><button onClick={()=>add(item,episode)}>+ capítulo</button><button onClick={()=>addSeries(item)}>Serie completa</button></span>:<button onClick={()=>add(item)}>Añadir película</button>}</div></article>})}</div>:<div className="builder-search-empty"><Icon name="search"/><p>{search?"No encontramos coincidencias":"Busca para comenzar tu selección"}</p></div>}</aside><main className="builder-editor"><div className="builder-fields"><label><span>Nombre</span><input value={name} onChange={(event)=>setName(event.target.value)} maxLength={70}/></label><label><span>Descripción</span><input value={description} onChange={(event)=>setDescription(event.target.value)} placeholder="Plan, ocasión o instrucciones para tus amigos" maxLength={160}/></label></div><div className="builder-summary"><div className="marathon-cover">{[...new Set(tasks.map((task)=>task.itemId))].slice(0,4).map((id)=><img src={posterFor(ITEM_BY_ID.get(id)!,"card")} alt="" key={id}/>)}{!tasks.length&&<Icon name="film" size={34}/>}</div><span><strong>{tasks.length} sesiones</strong><small>{formatMinutes(totalMinutes)} · {new Set(tasks.map((task)=>task.itemId)).size} títulos</small></span><button onClick={save}><Icon name="bookmark"/>Guardar</button></div>{tasks.length?<div className="builder-timeline">{tasks.map((task,index)=>{const item=ITEM_BY_ID.get(task.itemId)!;return <article key={`${task.itemId}-${task.episode||0}-${index}`} draggable onDragStart={()=>setDragged(index)} onDragOver={(event)=>event.preventDefault()} onDrop={()=>{if(dragged!==null)move(dragged,index);setDragged(null);}} style={mediaStyle(item)}><span className="drag-handle"><Icon name="grip"/></span><b>{String(index+1).padStart(2,"0")}</b><img src={artworkFor(item,"card")} alt=""/><button onClick={()=>onOpenDetail(item)}><small>{TYPE_LABEL[item.type]} · {durationOf(task)} min</small><strong>{item.title}</strong><span>{task.episode?`Capítulo ${task.episode}`:"Película completa"}</span></button><div><button disabled={index===0} onClick={()=>move(index,index-1)} aria-label="Subir">↑</button><button disabled={index===tasks.length-1} onClick={()=>move(index,index+1)} aria-label="Bajar">↓</button><button onClick={()=>setTasks((current)=>current.filter((_entry,currentIndex)=>currentIndex!==index))} aria-label="Quitar"><Icon name="close"/></button></div></article>})}</div>:<div className="builder-drop-empty"><Icon name="grip" size={32}/><h3>Tu maratón está vacío</h3><p>Busca contenido en la columna izquierda y añádelo aquí.</p></div>}</main></div>{saved.length>0&&<section className="saved-marathons"><div className="dashboard-section-head"><div><span className="dash-eyebrow">Plantillas locales</span><h2>Tus maratones</h2></div><small>{saved.length} guardados</small></div><div>{saved.map((marathon)=><article key={marathon.id}><div className="saved-cover">{marathon.coverIds.slice(0,4).map((id)=>ITEM_BY_ID.get(id)&&<img key={id} src={posterFor(ITEM_BY_ID.get(id)!,"thumb")} alt=""/>)}</div><span><strong>{marathon.name}</strong><small>{marathon.tasks.length} sesiones · {marathon.author}</small></span><button onClick={()=>load(marathon)}>Editar</button><button onClick={()=>setSaved((current)=>current.filter((entry)=>entry.id!==marathon.id))}><Icon name="close"/></button></article>)}</div></section>}</section>;
 }
@@ -1484,7 +1527,38 @@ function MarvelCalendar({ onOpenDetail, notify }: { onOpenDetail: (item: MapItem
   </section>;
 }
 
-function MyProfileView({ profile, watched, ratings, favorites, history, rewatches, achievements, episodeCount, completedLines, onOpenCollection, onOpenAchievementRoute }: { profile:Profile|undefined;watched:Set<string>;ratings:Record<string,number>;favorites:Set<string>;history:ActivityEvent[];rewatches:Record<string,number>;achievements:Achievement[];episodeCount:number;completedLines:number;onOpenCollection:()=>void;onOpenAchievementRoute:(achievement:Achievement)=>void }) {
+type AchievementFilter = "all" | "progress" | "unlocked";
+
+function achievementGroup(id:string) {
+  if (["first-assembly","night-marathon","archive-opens","phase-traveler","one-reality","half-multiverse","hundred-counting","everything-connected"].includes(id)) return "Progreso general";
+  if (["great-power","bad-lizard","back-home","three-spiders","wear-mask","always-spectacular","animated-neighbor","web-destiny"].includes(id)) return "Spider-Man";
+  if (["to-me-xmen","future-reunited","best-at-what-i-do","mutant-proud","clobbering-time","first-family","legacy-keepers"].includes(id)) return "X-Men y Fantastic Four";
+  if (["hells-kitchen-devil","street-heroes","one-batch","we-are-venom","symbiote-web","watcher-saw-all","animated-mightiest","every-frame"].includes(id)) return "Legados y animación";
+  if (["showrunner","code-between-worlds","together-now","multiverse-critic","one-more-time","watcher-notes","reality-curator","multiverse-museum","sorcerer-oath"].includes(id)) return "Maratones y actividad";
+  if (["portals-open","multiverse-visitors","ready-doomsday","battleworld-destiny"].includes(id)) return "Convergencias";
+  return "UCM y personajes";
+}
+
+function AchievementsView({achievements,watched,onOpenRoute}:{achievements:Achievement[];watched:Set<string>;onOpenRoute:(achievement:Achievement)=>void}) {
+  const [filter,setFilter]=useState<AchievementFilter>("all");
+  const [group,setGroup]=useState("Todos");
+  const [selectedAchievement,setSelectedAchievement]=useState<Achievement|null>(null);
+  const unlocked=achievements.filter((entry)=>entry.unlocked).length;
+  const groups=["Todos",...new Set(achievements.map((entry)=>achievementGroup(entry.id)))];
+  const visible=achievements.filter((entry)=>(filter==="all"||filter==="unlocked"&&entry.unlocked||filter==="progress"&&!entry.unlocked)&&(group==="Todos"||achievementGroup(entry.id)===group));
+  const next=[...achievements].filter((entry)=>!entry.unlocked).sort((a,b)=>b.progress-a.progress)[0];
+  return <section className="dashboard-workspace achievements-workspace">
+    <header className="dashboard-toolbar artwork-toolbar achievements-hero" style={{"--hero":`url(./artwork/cosmic-hero-v1.webp)`} as React.CSSProperties}><div><span className="dash-eyebrow">Tu sala de trofeos</span><h1>Logros del multiverso</h1><p>Retos concretos, progreso comprobable y rutas directas hacia cada insignia.</p></div><div className="achievement-hero-count"><strong>{unlocked}</strong><span><b>de {achievements.length}</b><small>desbloqueados</small></span></div></header>
+    <div className="dashboard-scroll achievements-scroll">
+      {next&&<section className="next-achievement" data-tier={next.tier.toLowerCase()}><span><Icon name={next.icon} size={30}/></span><div><small>Siguiente insignia · {next.tier}</small><h2>{next.title}</h2><p>{next.description}</p><i><b style={{width:`${next.progress*100}%`}}/></i></div><strong>{Math.round(next.progress*100)}%</strong><button onClick={()=>setSelectedAchievement(next)}>Ver requisitos</button></section>}
+      <div className="achievement-toolbar"><div>{([['all','Todos'],['progress','En progreso'],['unlocked','Desbloqueados']] as Array<[AchievementFilter,string]>).map(([id,label])=><button key={id} className={filter===id?'active':''} onClick={()=>setFilter(id)}>{label}</button>)}</div><label><span className="sr-only">Categoría</span><select value={group} onChange={(event)=>setGroup(event.target.value)}>{groups.map((entry)=><option key={entry}>{entry}</option>)}</select></label></div>
+      {visible.length?<div className="achievement-catalog">{visible.map((achievement)=><button type="button" key={achievement.id} data-tier={achievement.tier.toLowerCase()} className={achievement.unlocked?"unlocked":""} onClick={()=>setSelectedAchievement(achievement)}><span><Icon name={achievement.icon}/></span><div><small>{achievementGroup(achievement.id)} · {achievement.tier}</small><strong>{achievement.title}</strong><p>{achievement.description}</p><i><b style={{width:`${achievement.progress*100}%`}}/></i><em>{achievement.unlocked?'Desbloqueado':`${Math.round(achievement.progress*100)}% completado`}</em></div>{achievement.unlocked?<Icon name="check"/>:<Icon name="chevron"/>}</button>)}</div>:<div className="list-empty"><Icon name="trophy" size={36}/><h2>No hay logros en este filtro</h2><p>Prueba otra categoría o vuelve a mostrar todos.</p></div>}
+    </div>
+    {selectedAchievement&&<AchievementDetail achievement={selectedAchievement} watched={watched} onClose={()=>setSelectedAchievement(null)} onOpenRoute={()=>{onOpenRoute(selectedAchievement);setSelectedAchievement(null);}}/>}
+  </section>;
+}
+
+function MyProfileView({ profile, watched, ratings, favorites, history, rewatches, achievements, episodeCount, completedLines, onOpenCollection, onOpenAchievements, onOpenAchievementRoute }: { profile:Profile|undefined;watched:Set<string>;ratings:Record<string,number>;favorites:Set<string>;history:ActivityEvent[];rewatches:Record<string,number>;achievements:Achievement[];episodeCount:number;completedLines:number;onOpenCollection:()=>void;onOpenAchievements:()=>void;onOpenAchievementRoute:(achievement:Achievement)=>void }) {
   const [account,setAccount]=useState<{name:string;email:string}>({name:profile?.name||"Mi recorrido",email:"Progreso personal"});
   const [selectedAchievement,setSelectedAchievement]=useState<Achievement|null>(null);
   useEffect(()=>{const client=getSupabase();if(!client)return;let mounted=true;client.auth.getSession().then(({data})=>{if(!mounted||!data.session)return;setAccount({name:data.session.user.user_metadata.display_name||profile?.name||data.session.user.email?.split("@")[0]||"Mi recorrido",email:data.session.user.email||"Cuenta Nexus"});});return()=>{mounted=false;};},[profile?.name]);
@@ -1497,11 +1571,11 @@ function MyProfileView({ profile, watched, ratings, favorites, history, rewatche
   const estimatedWatchedMinutes=[...watched].reduce((sum,id)=>{const item=ITEM_BY_ID.get(id);if(!item)return sum;const episodes=EPISODE_COUNTS[id]||0;return sum+(episodes?(TITLE_METADATA[id]?.episodeRuntimeMinutes||EPISODE_RUNTIME_OVERRIDES[id]||24)*episodes:(TITLE_METADATA[id]?.runtimeMinutes||RUNTIME_OVERRIDES[id]||120));},0);
   const unlocked=achievements.filter((achievement)=>achievement.unlocked).length;
   return <section className="dashboard-workspace profiles-workspace">
-    <header className="dashboard-toolbar artwork-toolbar profile-identity-hero" style={{ "--hero": `url(./artwork/street-hero-v1.webp)`,"--profile":profile?.color||"#f2454b" } as React.CSSProperties}><div className="profile-avatar large" style={{background:profile?.color}}>{profile?.avatar||account.name.slice(0,1).toUpperCase()}</div><div><span className="dash-eyebrow">MI PERFIL NEXUS · {account.email}</span><h1>{account.name}</h1><p>Tu actividad, colección y progreso sincronizados en un solo lugar.</p></div><button onClick={onOpenCollection}><Icon name="trophy"/>Abrir Archivo Nexus</button></header>
+    <header className="dashboard-toolbar artwork-toolbar profile-identity-hero" style={{ "--hero": `url(./artwork/street-hero-v1.webp)`,"--profile":profile?.color||"#f2454b" } as React.CSSProperties}><div className="profile-avatar large" style={{background:profile?.color}}>{profile?.avatar||account.name.slice(0,1).toUpperCase()}</div><div><span className="dash-eyebrow">MI PERFIL NEXUS · {account.email}</span><h1>{account.name}</h1><p>Tu actividad, colección y progreso sincronizados en un solo lugar.</p></div><div className="profile-header-actions"><button onClick={onOpenAchievements}><Icon name="trophy"/>Ver logros</button><button onClick={onOpenCollection}><Icon name="film"/>Abrir Archivo</button></div></header>
     <div className="dashboard-scroll"><section className="profile-overview"><div className="profile-progress-ring" style={{"--progress":`${progress*3.6}deg`} as React.CSSProperties}><strong>{progress}%</strong><small>completado</small></div><div><span className="dash-eyebrow">RESUMEN DEL MULTIVERSO</span><h2>{watched.size} historias forman parte de tu recorrido</h2><p>Has registrado aproximadamente {formatMinutes(estimatedWatchedMinutes)} entre películas, especiales y temporadas completas.</p></div><button onClick={onOpenCollection}>Ver colección digital <Icon name="chevron"/></button></section>
       <section className="personal-stats"><div className="dashboard-section-head"><div><span className="dash-eyebrow">Estadísticas personales</span><h2>{currentYear} en Nexus</h2></div><small>Basado en tu historial local</small></div><div className="stat-grid personal"><div><Icon name="film"/><span><strong>{watched.size}</strong><small>títulos vistos</small></span></div><div><Icon name="star"/><span><strong>{favorites.size}</strong><small>favoritos</small></span></div><div><Icon name="bar"/><span><strong>{average}</strong><small>calificación media</small></span></div><div><Icon name="shuffle"/><span><strong>{Object.values(rewatches).reduce((a,b)=>a+b,0)}</strong><small>repeticiones</small></span></div></div><div className="annual-chart">{monthly.map((value,index)=><div key={index}><i style={{ height:`${Math.max(4,value/maxMonth*100)}%` }}/><span>{["E","F","M","A","M","J","J","A","S","O","N","D"][index]}</span><small>{value}</small></div>)}</div></section>
       <section className="profile-milestones"><article><Icon name="check"/><strong>{episodeCount}</strong><small>capítulos vistos</small></article><article><Icon name="route"/><strong>{completedLines}</strong><small>universos completos</small></article><article><Icon name="trophy"/><strong>{unlocked}</strong><small>logros desbloqueados</small></article><article><Icon name="clock"/><strong>{formatMinutes(estimatedWatchedMinutes)}</strong><small>tiempo registrado</small></article></section>
-      {achievements.length>0&&<section className="achievement-section"><div className="dashboard-section-head"><div><span className="dash-eyebrow">Progreso opcional</span><h2>Logros del multiverso</h2></div><small>{achievements.filter((achievement)=>achievement.unlocked).length}/{achievements.length} desbloqueados</small></div><div className="achievement-grid">{achievements.map((achievement)=><button type="button" key={achievement.id} data-tier={achievement.tier.toLowerCase()} className={achievement.unlocked?"unlocked":""} onClick={()=>setSelectedAchievement(achievement)}><span><Icon name={achievement.icon}/></span><div><small>{achievement.tier}</small><strong>{achievement.title}</strong><p>{achievement.description}</p><i><b style={{width:`${achievement.progress*100}%`}}/></i></div>{achievement.unlocked&&<Icon name="check"/>}</button>)}</div></section>}
+      {achievements.length>0&&<section className="achievement-section achievement-preview"><div className="dashboard-section-head"><div><span className="dash-eyebrow">Progreso opcional</span><h2>Logros recientes</h2></div><button onClick={onOpenAchievements}>Ver los {achievements.length} logros <Icon name="chevron"/></button></div><div className="achievement-grid">{[...achievements].sort((a,b)=>Number(b.unlocked)-Number(a.unlocked)||b.progress-a.progress).slice(0,4).map((achievement)=><button type="button" key={achievement.id} data-tier={achievement.tier.toLowerCase()} className={achievement.unlocked?"unlocked":""} onClick={()=>setSelectedAchievement(achievement)}><span><Icon name={achievement.icon}/></span><div><small>{achievement.tier}</small><strong>{achievement.title}</strong><p>{achievement.description}</p><i><b style={{width:`${achievement.progress*100}%`}}/></i></div>{achievement.unlocked&&<Icon name="check"/>}</button>)}</div></section>}
     </div>
     {selectedAchievement&&<AchievementDetail achievement={selectedAchievement} watched={watched} onClose={()=>setSelectedAchievement(null)} onOpenRoute={()=>{onOpenAchievementRoute(selectedAchievement);setSelectedAchievement(null);}}/>}
   </section>;
@@ -1520,7 +1594,7 @@ function AchievementDetail({achievement,watched,onClose,onOpenRoute}:{achievemen
   </div>;
 }
 
-function ListView({ watchlist, ignored, favorites, ratings, customLists, watched, episodes, onToggleWatchlist, onToggleFavorite, onLists, onRestore, onOpenDetail, onOpenMap }: { watchlist: Set<string>; ignored: Set<string>; favorites: Set<string>; ratings: Record<string, number>; customLists: CustomList[]; watched: Set<string>; episodes: EpisodeState; onToggleWatchlist: (item: MapItem) => void; onToggleFavorite: (item: MapItem) => void; onLists: React.Dispatch<React.SetStateAction<CustomList[]>>; onRestore: (item: MapItem) => void; onOpenDetail: (item: MapItem) => void; onOpenMap: (item: MapItem) => void }) {
+function ListView({ watchlist, ignored, favorites, ratings, customLists, watched, episodes, onToggleWatchlist, onToggleFavorite, onLists, onRestore, onOpenDetail, onOpenMap, onBrowseMap, onBrowseRecommendations }: { watchlist: Set<string>; ignored: Set<string>; favorites: Set<string>; ratings: Record<string, number>; customLists: CustomList[]; watched: Set<string>; episodes: EpisodeState; onToggleWatchlist: (item: MapItem) => void; onToggleFavorite: (item: MapItem) => void; onLists: React.Dispatch<React.SetStateAction<CustomList[]>>; onRestore: (item: MapItem) => void; onOpenDetail: (item: MapItem) => void; onOpenMap: (item: MapItem) => void; onBrowseMap:()=>void; onBrowseRecommendations:()=>void }) {
   const [tab, setTab] = useState<"saved" | "favorites" | "ignored" | "lists">("saved");
   const [newListName, setNewListName] = useState("");
   const [selectedListId, setSelectedListId] = useState("");
@@ -1541,7 +1615,7 @@ function ListView({ watchlist, ignored, favorites, ratings, customLists, watched
         const total = EPISODE_COUNTS[item.id] || 0;
         const done = episodes[item.id]?.length || 0;
         return <article key={item.id} className={`media-${item.type}`} style={mediaStyle(item)}><div className="library-poster"><img src={posterFor(item)} alt=""/><span>{TYPE_LABEL[item.type]}</span></div><div><span><b className="type-dot"/>{trackForId(item.trackId)?.short} · {item.date}</span><h2>{item.title}</h2><p>{ratings[item.id] ? `${"★".repeat(ratings[item.id])} · ` : ""}{watched.has(item.id) ? "Completada" : total ? `${done}/${total} capítulos vistos` : "Pendiente"}</p>{total > 0 && <i><b style={{ width: `${done / total * 100}%` }}/></i>}</div><div className="library-actions"><button onClick={() => onOpenDetail(item)}>Abrir</button><button title="Ver en el mapa" onClick={() => onOpenMap(item)}><Icon name="route"/></button>{tab === "saved" ? <button title="Quitar de guardados" onClick={() => onToggleWatchlist(item)}><Icon name="close"/></button> : tab === "favorites" ? <button title="Quitar de favoritos" onClick={() => onToggleFavorite(item)}><Icon name="close"/></button> : tab === "ignored" ? <button onClick={() => onRestore(item)}>Restaurar</button> : <button title="Quitar de esta lista" onClick={() => onLists((current) => current.map((list) => list.id === selectedList?.id ? { ...list, items: list.items.filter((id) => id !== item.id) } : list))}><Icon name="close"/></button>}</div></article>;
-      })}</div> : <div className="list-empty"><Icon name={tab === "favorites" ? "star" : tab === "lists" ? "note" : tab === "saved" ? "bookmark" : "check"} size={36}/><h2>{tab === "favorites" ? "Aún no tienes favoritos" : tab === "lists" ? customLists.length ? "Esta lista está vacía" : "Crea tu primera lista" : tab === "saved" ? "Tu lista está vacía" : "No has descartado nada"}</h2><p>Abre una ficha para organizar tus títulos y registrar tus preferencias.</p></div>}
+      })}</div> : <div className="list-empty"><Icon name={tab === "favorites" ? "star" : tab === "lists" ? "note" : tab === "saved" ? "bookmark" : "check"} size={36}/><h2>{tab === "favorites" ? "Aún no tienes favoritos" : tab === "lists" ? customLists.length ? "Esta lista está vacía" : "Crea tu primera lista" : tab === "saved" ? "Tu lista está vacía" : "No has descartado nada"}</h2><p>Explora un título y usa su ficha para guardarlo, calificarlo u organizarlo.</p><div className="empty-actions"><button onClick={onBrowseRecommendations}><Icon name="spark"/>Ver recomendaciones</button><button onClick={onBrowseMap}><Icon name="route"/>Explorar el mapa</button></div></div>}
     </div>
   </section>;
 }

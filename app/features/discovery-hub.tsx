@@ -17,7 +17,7 @@ export type DiscoveryItem = {
   backdrop: string;
 };
 
-type HubTab = "eras" | "journeys" | "cards" | "posters" | "room" | "achievements";
+type HubTab = "eras" | "journeys" | "cards" | "posters" | "room";
 type Character = { id:string;name:string;variant:string;lore:string;rarity:"Común"|"Rara"|"Épica"|"Legendaria";heroId:string;appearances:string[];stats:[number,number,number,number] };
 
 const CHARACTERS: Character[] = [
@@ -45,28 +45,14 @@ export function DiscoveryHub({items,watched,onOpen}:{items:DiscoveryItem[];watch
   const eras=useMemo(()=>["Los 90","Los 2000","Los 2010","Los 2020"].map((label)=>{const entries=released.filter((item)=>decadeLabel(item.year)===label);const completed=entries.filter((item)=>watched.has(item.id)).length;return {label,entries,completed};}),[released,watched]);
   const character=CHARACTERS.find((entry)=>entry.id===selectedCharacter)||CHARACTERS[0];
   const characterEntries=character.appearances.map((id)=>itemMap.get(id)).filter((item):item is DiscoveryItem=>Boolean(item));
-  const unlockedCharacters=CHARACTERS.filter((entry)=>entry.appearances.some((id)=>watched.has(id)));
   const unlockedPosters=released.filter((item)=>watched.has(item.id));
   const showcasePosters:ShowcasePoster[]=unlockedPosters.map((item)=>({id:item.id,title:item.title,image:item.poster}));
-  const achievements=useMemo(()=>{
-    const completedCharacters=CHARACTERS.filter((entry)=>entry.appearances.filter((id)=>itemMap.has(id)).every((id)=>watched.has(id))).length;
-    const completedEras=eras.filter((era)=>era.entries.length&&era.completed===era.entries.length).length;
-    const sagas=[...new Set(released.map((item)=>item.saga).filter(Boolean))];
-    const completedSagas=sagas.filter((saga)=>released.filter((item)=>item.saga===saga).every((item)=>watched.has(item.id))).length;
-    return [
-      {title:"Coleccionista",copy:"Desbloquea 10 pósteres",value:unlockedPosters.length,target:10,color:"#ec5965"},
-      {title:"A través del tiempo",copy:"Completa una década",value:completedEras,target:1,color:"#4cc9dd"},
-      {title:"Biografía viviente",copy:"Completa el viaje de un personaje",value:completedCharacters,target:1,color:"#a77bff"},
-      {title:"Guardián de sagas",copy:"Completa una saga",value:completedSagas,target:1,color:"#f2b84b"},
-      {title:"Salón de héroes",copy:"Desbloquea cinco cartas",value:unlockedCharacters.length,target:5,color:"#63d28d"},
-      {title:"Archivo Nexus",copy:"Colecciona 50 títulos",value:unlockedPosters.length,target:50,color:"#6d8fff"},
-    ];
-  },[eras,itemMap,released,unlockedCharacters.length,unlockedPosters.length,watched]);
 
   return <section className="dashboard-workspace discovery-workspace">
     <header className="discovery-hero"><div><span>ARCHIVO NEXUS</span><h1>Explora. Completa. Colecciona.</h1><p>Recorre décadas, sigue a tus personajes y convierte cada título visto en una pieza de tu colección.</p></div><div className="collection-orbit"><i/><i/><i/><strong>{unlockedPosters.length}</strong><small>piezas</small></div></header>
     <nav className="discovery-tabs" aria-label="Secciones de colección">
-      {([['eras','Eras'],['journeys','Viajes'],['cards','Cartas'],['posters','Pósteres'],['room','Sala 3D'],['achievements','Logros']] as Array<[HubTab,string]>).map(([id,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}
+      {([['eras','Eras'],['journeys','Viajes'],['cards','Cartas'],['posters','Pósteres'],['room','Sala 3D']] as Array<[HubTab,string]>).map(([id,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}
+      <button onClick={()=>window.dispatchEvent(new CustomEvent("nexus:open-achievements"))}>Logros</button>
     </nav>
     <div className="discovery-scroll">
       {tab==='eras'&&<div className="era-grid">{eras.map((era,index)=><article className={`era-card era-${index}`} key={era.label}><div className="era-mosaic">{era.entries.slice(0,6).map((item)=><img key={item.id} src={item.backdrop||item.poster} alt=""/>)}</div><div><span>{era.entries[0]?.year||'—'}—{era.entries.at(-1)?.year||'—'}</span><h2>{era.label}</h2><p>{era.entries.length} títulos · {era.completed} completados</p><i><b style={{width:`${era.completed/Math.max(1,era.entries.length)*100}%`}}/></i></div><button onClick={()=>era.entries.find((item)=>!watched.has(item.id))&&onOpen(era.entries.find((item)=>!watched.has(item.id))!.id)}>Continuar era</button></article>)}</div>}
@@ -74,7 +60,6 @@ export function DiscoveryHub({items,watched,onOpen}:{items:DiscoveryItem[];watch
       {tab==='cards'&&<div className="trading-grid">{CHARACTERS.map((entry)=>{const unlocked=entry.appearances.some((id)=>watched.has(id));const hero=itemMap.get(entry.heroId);return <article className={`trading-card ${unlocked?'unlocked':'locked'}`} style={{'--rarity':RARITY_COLOR[entry.rarity]} as React.CSSProperties} key={entry.id}><div className="card-art"><img src={hero?.poster||''} alt=""/><span>{entry.rarity}</span></div><div className="card-copy"><small>{entry.variant}</small><h2>{unlocked?entry.name:'Carta bloqueada'}</h2><p>{unlocked?entry.lore:'Mira una aparición de este personaje para desbloquearla.'}</p>{unlocked&&<div className="card-stats">{['Poder','Mente','Agilidad','Impacto'].map((label,index)=><span key={label}><small>{label}</small><i><b style={{width:`${entry.stats[index]}%`}}/></i><strong>{entry.stats[index]}</strong></span>)}</div>}</div></article>})}</div>}
       {tab==='posters'&&<><div className="collection-summary"><span><strong>{unlockedPosters.length}</strong><small>desbloqueados</small></span><i><b style={{width:`${unlockedPosters.length/Math.max(1,released.length)*100}%`}}/></i><span><strong>{released.length}</strong><small>en el archivo</small></span></div><div className="poster-vault">{released.map((item)=><button className={watched.has(item.id)?'unlocked':'locked'} key={item.id} onClick={()=>onOpen(item.id)}><img src={item.poster} alt="" loading="lazy"/><span>{watched.has(item.id)?<><strong>{item.title}</strong><small>{item.year} · Coleccionado</small></>:<><strong>Por descubrir</strong><small>{item.year} · Marca como visto</small></>}</span></button>)}</div></>}
       {tab==='room'&&<><div className="room-heading"><span>SALA DE EXHIBICIÓN</span><h2>Tu multiverso, en las paredes.</h2><p>La sala se construye automáticamente con los pósteres que has desbloqueado.</p></div><ShowcaseRoom posters={showcasePosters}/></>}
-      {tab==='achievements'&&<div className="expanded-achievements">{achievements.map((achievement)=>{const progress=Math.min(1,achievement.value/achievement.target);return <article className={progress>=1?'unlocked':''} style={{'--badge':achievement.color} as React.CSSProperties} key={achievement.title}><div>◆</div><span><small>{progress>=1?'DESBLOQUEADO':'EN PROGRESO'}</small><h2>{achievement.title}</h2><p>{achievement.copy}</p><i><b style={{width:`${progress*100}%`}}/></i><strong>{Math.min(achievement.value,achievement.target)}/{achievement.target}</strong></span></article>})}</div>}
     </div>
   </section>;
 }
