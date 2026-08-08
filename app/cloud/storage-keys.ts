@@ -21,6 +21,7 @@ export const NEXUS_KEYS = {
   customMarathons: "nexus-desktop-custom-marathons-v1",
   preferences: "nexus-desktop-preferences-v1",
   achievements: "nexus-desktop-achievements-v1",
+  achievementRecords: "nexus-desktop-achievement-records-v1",
   customRoute: "nexus-desktop-custom-route-v1",
 } as const;
 
@@ -48,6 +49,7 @@ export const ACCOUNT_VALUE_KEYS = [
   NEXUS_KEYS.customMarathons,
   NEXUS_KEYS.preferences,
   NEXUS_KEYS.achievements,
+  NEXUS_KEYS.achievementRecords,
   NEXUS_KEYS.customRoute,
 ] as const;
 

@@ -15,12 +15,16 @@ type AppView = "dashboard" | "map" | "explore" | "routes" | "planner" | "calenda
 type Intent = "chronological" | "movies" | "series" | "short" | "new-line" | "random";
 type Recommendation = { item: MapItem; reason: string };
 type IconName = "search" | "target" | "minus" | "plus" | "fit" | "check" | "film" | "route" | "download" | "upload" | "close" | "chevron" | "home" | "bookmark" | "eye" | "shuffle" | "clock" | "spark" | "bar" | "calendar" | "user" | "star" | "note" | "bell" | "settings" | "trophy" | "share" | "grip";
-type ActivityEvent = { id: string; at: number; action: "watched" | "unwatched" | "episode" | "rewatch" | "rating" | "note" };
+type ActivityEvent = { id: string; at: number; action: "watched" | "unwatched" | "episode" | "rewatch" | "rating" | "note" | "undo" };
 type CustomList = { id: string; name: string; color: string; items: string[] };
 type Profile = { id: string; name: string; avatar: string; color: string; child: boolean; guest?: boolean };
 type SharedMarathon = { version: 1; id: string; name: string; description: string; createdAt: string; author: string; tasks: Array<{ itemId: string; episode?: number }>; coverIds: string[] };
 type Preferences = { accent: "red" | "violet" | "cyan"; intensity: number; density: "comfortable" | "compact"; cardSize: "small" | "medium" | "large"; fontScale: number; highContrast: boolean; reduceMotion: boolean; achievements: boolean };
-type Achievement = { id: string; title: string; description: string; icon: IconName; unlocked: boolean; progress: number };
+type AchievementTier = "Bronce" | "Plata" | "Oro" | "Vibranium" | "Diamante";
+type AchievementRecord = { id: string; version: number; unlockedAt: string; progressSnapshot: { completedIds: string[]; requiredIds: string[] } };
+type Achievement = { id: string; version: number; title: string; description: string; icon: IconName; tier: AchievementTier; unlocked: boolean; progress: number; requiredIds: string[]; completedIds: string[]; unlockedAt?: string };
+type ToastState = { message: string; actionLabel?: string; onAction?: () => void };
+type DetailPanelMode = "full" | "compact";
 type GlobalHit = { key: string; item: MapItem; episode?: number; category: "Título" | "Capítulo" | "Personaje" | "Universo" | "Conexión"; context: string };
 
 const WATCHED_KEY = "nexus-desktop-watched-v1";
@@ -45,6 +49,7 @@ const ACTIVE_PROFILE_KEY = "nexus-desktop-active-profile-v1";
 const CUSTOM_MARATHONS_KEY = "nexus-desktop-custom-marathons-v1";
 const PREFERENCES_KEY = "nexus-desktop-preferences-v1";
 const UNLOCKED_ACHIEVEMENTS_KEY = "nexus-desktop-achievements-v1";
+const ACHIEVEMENT_RECORDS_KEY = "nexus-desktop-achievement-records-v1";
 const DEFAULT_PREFERENCES: Preferences = { accent: "red", intensity: 82, density: "comfortable", cardSize: "medium", fontScale: 100, highContrast: false, reduceMotion: false, achievements: true };
 const PROFILE_DATA_KEYS = [WATCHED_KEY, EPISODES_KEY, WATCHLIST_KEY, IGNORED_KEY, FAVORITE_TRACKS_KEY, INTENT_KEY, SPOILERS_KEY, ACTIVITY_KEY, RATINGS_KEY, FAVORITES_KEY, NOTES_KEY, WATCHED_DATES_KEY, REWATCHES_KEY, HISTORY_KEY, CUSTOM_LISTS_KEY, REMINDERS_KEY, MARATHON_KEY];
 const YEAR_START = 1992;
@@ -66,20 +71,20 @@ const INTENTS: { id: Intent; label: string; hint: string }[] = [
 ];
 
 const TRACKS = [
-  { id: "animation", label: "Marvel Studios · animación", short: "Marvel animado", color: "#25d0dd" },
-  { id: "animation-xmen", label: "X-Men · universos animados", short: "X-Men animado", color: "#6ca4ff" },
+  { id: "animation", label: "Marvel Animation · Multiverso del UCM", short: "Marvel animado", color: "#25d0dd" },
+  { id: "animation-xmen", label: "Marvel Animation · Legado de X-Men", short: "X-Men animado", color: "#6ca4ff" },
   { id: "animation-spider", label: "Spider-Man · universos animados", short: "Spider-Man animado", color: "#f05b8d" },
-  { id: "animation-teams", label: "Avengers y equipos · animación", short: "Equipos animados", color: "#f2a53a" },
-  { id: "animation-films", label: "Películas animadas de Marvel", short: "Películas animadas", color: "#58cfb5" },
-  { id: "defenders", label: "Saga de los Defensores · Marvel Television", short: "Defensores", color: "#d94a42" },
-  { id: "xmen", label: "X-Men · Fox", short: "X-Men", color: "#3b88ff" },
-  { id: "fantastic", label: "Fantastic Four · legado", short: "Fantastic Four", color: "#ffb640" },
-  { id: "other", label: "Defensores y legado", short: "Otros legados", color: "#ff793f" },
-  { id: "tobey", label: "Spider-Man · Tobey", short: "Tobey", color: "#f24e86" },
-  { id: "andrew", label: "Spider-Man · Andrew", short: "Andrew", color: "#9c70ff" },
-  { id: "sony", label: "Sony Spider-Man Universe", short: "Sony", color: "#c757e7" },
-  { id: "mcu", label: "Universo Cinematográfico Marvel", short: "UCM películas", color: "#f24545" },
-  { id: "series", label: "UCM · series y especiales", short: "UCM series", color: "#58cf83" },
+  { id: "animation-teams", label: "Marvel Animation · Héroes y equipos", short: "Equipos animados", color: "#f2a53a" },
+  { id: "animation-films", label: "Marvel · Películas animadas", short: "Películas animadas", color: "#58cfb5" },
+  { id: "defenders", label: "Marvel Television · The Defenders Saga", short: "Defenders", color: "#d94a42" },
+  { id: "xmen", label: "20th Century · Universo X-Men", short: "X-Men", color: "#3b88ff" },
+  { id: "fantastic", label: "Fantastic Four · Universos heredados", short: "Fantastic Four", color: "#ffb640" },
+  { id: "other", label: "Marvel · Universos heredados", short: "Otros legados", color: "#ff793f" },
+  { id: "tobey", label: "Sony Pictures · Spider-Man de Sam Raimi", short: "Raimi", color: "#f24e86" },
+  { id: "andrew", label: "Sony Pictures · The Amazing Spider-Man", short: "Amazing", color: "#9c70ff" },
+  { id: "sony", label: "Sony’s Spider-Man Universe", short: "Sony", color: "#c757e7" },
+  { id: "mcu", label: "Marvel Studios · Películas del UCM", short: "UCM películas", color: "#f24545" },
+  { id: "series", label: "Marvel Studios · Series y especiales del UCM", short: "UCM series", color: "#58cf83" },
 ] as const;
 
 const ERAS = [
@@ -368,11 +373,15 @@ export function App() {
   const [globalIndex, setGlobalIndex] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [detailMode, setDetailMode] = useState<DetailPanelMode>("full");
+  const [detailPinned, setDetailPinned] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(() => { try { const stored = JSON.parse(localStorage.getItem(PREFERENCES_KEY) || "{}"); return { ...DEFAULT_PREFERENCES, ...stored, fontScale: Math.max(100, Math.min(135, Number(stored.fontScale) || 100)) }; } catch { return DEFAULT_PREFERENCES; } });
   const [zoom, setZoom] = useState(0.46);
   const [mapScroll, setMapScroll] = useState({ left: 0, top: 0, width: 1, height: 1 });
   const [dragging, setDragging] = useState(false);
-  const [toast, setToast] = useState("");
+  const [zooming, setZooming] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [achievementRecords, setAchievementRecords] = useState<Record<string, AchievementRecord>>(() => { try { return JSON.parse(localStorage.getItem(ACHIEVEMENT_RECORDS_KEY) || "{}"); } catch { return {}; } });
   const [randomSeed, setRandomSeed] = useState(0);
   const [pendingMapItem, setPendingMapItem] = useState<MapItem | null>(null);
   const [routeFocus, setRouteFocus] = useState<Set<string>>(new Set());
@@ -385,6 +394,7 @@ export function App() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({ x: 0, y: 0, left: 0, top: 0 });
   const toastTimer = useRef<number | null>(null);
+  const zoomTimer = useRef<number | null>(null);
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0];
   const globalHits = useMemo(() => globalHitsFor(globalQuery), [globalQuery]);
 
@@ -398,12 +408,13 @@ export function App() {
     root.dataset.cardSize = preferences.cardSize;
     root.dataset.contrast = preferences.highContrast ? "high" : "normal";
     root.dataset.motion = preferences.reduceMotion ? "reduced" : "full";
+    root.dataset.nexusTheme = spoilerSafe ? "time" : "incursion";
     root.style.setProperty("--font-scale", String(preferences.fontScale / 100));
     root.style.setProperty("--accent-intensity", String(preferences.intensity / 100));
     root.style.setProperty("--accent-weight", `${Math.round(preferences.intensity / 5)}%`);
     root.style.setProperty("--theme-saturation", String(.72 + preferences.intensity / 180));
     window.dispatchEvent(new CustomEvent("nexus:local-change", { detail: { kind: "preferences" } }));
-  }, [preferences]);
+  }, [preferences, spoilerSafe]);
   useEffect(() => {
     const openCloud = () => setCloudOpen(true);
     window.addEventListener("nexus:open-cloud", openCloud);
@@ -503,7 +514,7 @@ export function App() {
     const lastId = Object.entries(activity).sort((a, b) => b[1] - a[1])[0]?.[0];
     return { episodeDone, seriesCompleted, moviesCompleted, completedLines, remainingMinutes, bestTrack: trackProgress[0], lastItem: lastId ? ITEM_BY_ID.get(lastId) : null };
   }, [activity, episodes, releasedItems, watched]);
-  const achievements = useMemo<Achievement[]>(() => {
+  const legacyAchievements = useMemo(() => {
     let marathonCount=0; try { marathonCount=JSON.parse(localStorage.getItem(CUSTOM_MARATHONS_KEY)||"[]").length; } catch {}
     const completedSeries=releasedItems.filter((item)=>Boolean(EPISODE_COUNTS[item.id])&&watched.has(item.id)).length;
     const completedTracks=TRACKS.filter((track)=>{const entries=releasedItems.filter((item)=>item.trackId===track.id);return entries.length>0&&entries.every((item)=>watched.has(item.id));}).length;
@@ -530,6 +541,94 @@ export function App() {
       {id:"raimi-journey",title:"Un gran poder",description:"Completa el viaje de Spider-Man de Tobey",icon:"star",unlocked:journeyProgress(spiderJourney)>=1,progress:journeyProgress(spiderJourney)},
     ];
   }, [customLists.length, ratings, releasedItems, watched]);
+  void legacyAchievements;
+
+  const achievements = useMemo<Achievement[]>(() => {
+    let marathonCount=0; try { marathonCount=JSON.parse(localStorage.getItem(CUSTOM_MARATHONS_KEY)||"[]").length; } catch {}
+    const completedTracks=TRACKS.filter((track)=>{const entries=releasedItems.filter((item)=>item.trackId===track.id);return entries.length>0&&entries.every((item)=>watched.has(item.id));}).length;
+    const phases=[...new Set(releasedItems.map((item)=>item.phase).filter(Boolean))];
+    const completedPhases=phases.filter((phase)=>releasedItems.filter((item)=>item.phase===phase).every((item)=>watched.has(item.id))).length;
+    const rated=Object.keys(ratings).length;
+    const rewatchTotal=Object.values(rewatches).reduce((sum,value)=>sum+value,0);
+    const notesTotal=Object.values(notes).filter((value)=>value.trim()).length;
+    const releasedIds=releasedItems.map((item)=>item.id);
+    const trackIds=(trackId:string)=>releasedItems.filter((item)=>item.trackId===trackId).map((item)=>item.id);
+    const validIds=(ids:string[])=>ids.filter((id,index)=>ITEM_BY_ID.has(id)&&ids.indexOf(id)===index);
+    const route=(id:string,title:string,description:string,ids:string[],tier:AchievementTier,icon:IconName="route",version=1):Achievement=>{
+      const requiredIds=validIds(ids);
+      const completedIds=requiredIds.filter((entry)=>watched.has(entry));
+      const saved=achievementRecords[id];
+      const criteriaMet=requiredIds.length>0&&completedIds.length===requiredIds.length&&requiredIds.every((entry)=>!ITEM_BY_ID.get(entry)?.upcoming);
+      return {id,version,title,description,tier,icon,requiredIds,completedIds,progress:completedIds.length/Math.max(1,requiredIds.length),unlocked:Boolean(saved)||criteriaMet,unlockedAt:saved?.unlockedAt};
+    };
+    const metric=(id:string,title:string,description:string,current:number,goal:number,tier:AchievementTier,icon:IconName="trophy",version=1,requiredIds:string[]=[]):Achievement=>{
+      const saved=achievementRecords[id];
+      const completedIds=requiredIds.filter((entry)=>watched.has(entry));
+      return {id,version,title,description,tier,icon,requiredIds,completedIds,progress:Math.min(1,current/Math.max(1,goal)),unlocked:Boolean(saved)||current>=goal,unlockedAt:saved?.unlockedAt};
+    };
+    const sameDayMax=Object.values(history.filter((event)=>event.action==="watched").reduce<Record<string,number>>((days,event)=>{const day=new Date(event.at).toISOString().slice(0,10);days[day]=(days[day]||0)+1;return days;},{})).reduce((max,value)=>Math.max(max,value),0);
+    return [
+      metric("first-assembly","Primer ensamblaje","Completa tu primer título",watched.size,1,"Bronce","spark"),
+      metric("night-marathon","Maratón nocturno","Completa tres títulos en un mismo día",sameDayMax,3,"Bronce","clock"),
+      metric("archive-opens","El archivo se abre","Completa 10 títulos estrenados",watched.size,10,"Bronce","film"),
+      metric("phase-traveler","Viajero de fase","Completa cualquier fase del UCM",completedPhases,1,"Plata","route"),
+      metric("one-reality","Una realidad a la vez","Completa una línea del mapa",completedTracks,1,"Plata","route"),
+      metric("half-multiverse","A mitad del multiverso","Alcanza el 50% del catálogo estrenado",watched.size,Math.ceil(releasedIds.length/2),"Oro","bar",1,releasedIds),
+      metric("hundred-counting","Ciento y contando","Completa 100 títulos estrenados",watched.size,100,"Vibranium","trophy"),
+      route("everything-connected","Todo está conectado","Completa todo el catálogo estrenado",releasedIds,"Diamante","trophy",2),
+
+      route("iron-trilogy","Genio, millonario, filántropo","Completa la trilogía de Iron Man",["iron-man","iron-man-2","iron-man-3"],"Plata","spark"),
+      route("on-your-left","A tu izquierda","Completa la saga individual del Capitán América",["cap-first-avenger","winter-soldier","civil-war","brave-new-world"],"Oro","star"),
+      route("still-worthy","Aún digno","Completa las cuatro películas de Thor",["thor","thor-dark-world","ragnarok","love-thunder"],"Oro","spark"),
+      route("size-problems","Problemas de tamaño","Completa la trilogía de Ant-Man",["ant-man","antman-wasp","quantumania"],"Plata","target"),
+      route("higher-further","Más alto, más lejos","Completa la ruta de Captain Marvel",["captain-marvel","the-marvels"],"Plata","star"),
+      route("wakanda-forever","Wakanda por siempre","Completa las películas de Black Panther",["black-panther","wakanda-forever"],"Plata","trophy"),
+      route("bargain","He venido a negociar","Completa las películas de Doctor Strange",["doctor-strange","multiverse-madness"],"Plata","spark"),
+      route("galaxy-misfits","Los inadaptados de la galaxia","Completa Guardianes 1–3 y el especial navideño",["guardians","guardians-2","holiday-special","guardians-3"],"Oro","star"),
+      route("avengers-assembled","Vengadores reunidos","Completa las cuatro películas principales de Avengers",["avengers","ultron","infinity-war","endgame"],"Oro","trophy"),
+      route("soul-price","El precio de un alma","Completa la Saga del Infinito",releasedItems.filter((item)=>["Fase 1","Fase 2","Fase 3"].includes(item.phase||"")&&item.trackId==="mcu").map((item)=>item.id),"Diamante","trophy",2),
+      route("what-is-grief","¿Qué es el dolor?","Completa el recorrido esencial de Wanda",["ultron","civil-war","infinity-war","endgame","wandavision","multiverse-madness"],"Oro","spark"),
+      route("glorious-purpose","Glorioso propósito","Completa el recorrido esencial de Loki",["thor","avengers","thor-dark-world","ragnarok","infinity-war","endgame","loki-1","loki-2"],"Oro","route"),
+      route("timeline-protector","Protector de la línea temporal","Completa las series y especiales estrenados del UCM",trackIds("series"),"Diamante","clock",2),
+
+      route("great-power","Un gran poder","Completa la trilogía de Tobey Maguire",["spiderman-raimi-1","spiderman-raimi-2","spiderman-raimi-3"],"Oro","star"),
+      route("bad-lizard","Somebody’s Been a Bad Lizard","Completa la saga de Andrew Garfield",["amazing-spiderman","amazing-spiderman-2"],"Plata","star"),
+      route("back-home","De vuelta a casa","Completa la trilogía de Spider-Man del UCM",["homecoming","far-from-home","no-way-home"],"Oro","home"),
+      route("three-spiders","Tres arañas, un destino","Completa las tres rutas live action hasta No Way Home",["spiderman-raimi-1","spiderman-raimi-2","spiderman-raimi-3","amazing-spiderman","amazing-spiderman-2","homecoming","far-from-home","no-way-home"],"Oro","route"),
+      route("wear-mask","Cualquiera puede llevar la máscara","Completa las películas estrenadas de Spider-Verse",["spider-verse","across-spider-verse"],"Oro","spark"),
+      route("always-spectacular","Siempre espectacular","Completa The Spectacular Spider-Man",["spectacular-spiderman"],"Plata","star"),
+      route("animated-neighbor","Amigo y vecino de todos los universos","Completa las series animadas de Spider-Man",trackIds("animation-spider"),"Oro","route"),
+      route("web-destiny","La red del destino","Completa todo Spider-Man estrenado, animado y live action",[...trackIds("tobey"),...trackIds("andrew"),...trackIds("sony"),...trackIds("animation-spider"),"homecoming","far-from-home","no-way-home"],"Diamante","trophy",2),
+
+      route("to-me-xmen","A mí, mis X-Men","Completa X-Men: TAS y X-Men ’97",["xmen-animated-series","xmen97-1","xmen97-2"],"Oro","route"),
+      route("future-reunited","Días de un futuro reunido","Completa las películas principales de X-Men",trackIds("xmen").filter((id)=>!id.includes("deadpool")),"Oro","clock"),
+      route("best-at-what-i-do","El mejor en lo que hace","Completa la ruta de Wolverine",["wolverine-origins","the-wolverine","days-future-past","logan","deadpool-wolverine"],"Oro","star"),
+      route("mutant-proud","Mutante y orgulloso","Completa todos los universos X-Men estrenados",[...trackIds("xmen"),...trackIds("animation-xmen")],"Diamante","trophy",2),
+      route("clobbering-time","Es hora de las tortas","Completa Fantastic Four de 2005 y 2007",["fantastic-four-2005","silver-surfer"],"Plata","spark"),
+      route("first-family","La primera familia","Completa todos los universos Fantastic Four estrenados",trackIds("fantastic"),"Oro","home"),
+      route("legacy-keepers","Guardianes del legado","Completa X-Men, Fantastic Four y universos heredados",[...trackIds("xmen"),...trackIds("fantastic"),...trackIds("other")],"Diamante","trophy",2),
+
+      route("hells-kitchen-devil","El diablo de Hell’s Kitchen","Completa la ruta de Daredevil",releasedIds.filter((id)=>id.includes("daredevil")),"Oro","target"),
+      route("street-heroes","Héroes a nivel de calle","Completa The Defenders Saga",trackIds("defenders"),"Diamante","trophy",2),
+      route("one-batch","Una tanda, una misión","Completa la ruta de Punisher",releasedIds.filter((id)=>id.includes("punisher")),"Plata","target"),
+      route("we-are-venom","Somos Venom","Completa la trilogía de Venom",["venom","venom-carnage","venom-last-dance"],"Oro","spark"),
+      route("symbiote-web","Red simbiótica","Completa Sony’s Spider-Man Universe",trackIds("sony"),"Diamante","route",2),
+      route("watcher-saw-all","Yo lo he visto todo","Completa todas las temporadas de What If...?",["what-if-1","what-if-2","what-if-3"],"Oro","eye"),
+      route("animated-mightiest","Los héroes más poderosos, animados","Completa Avengers: Earth’s Mightiest Heroes",["avengers-earths-mightiest-heroes"],"Oro","trophy"),
+      route("every-frame","Cada fotograma, un universo","Completa todo el catálogo animado estrenado",releasedItems.filter((item)=>item.type==="animation").map((item)=>item.id),"Diamante","film",2),
+
+      metric("showrunner","Director de funciones","Crea tu primer maratón personalizado",marathonCount,1,"Bronce","calendar"),
+      metric("multiverse-critic","Crítico del multiverso","Califica 25 títulos",rated,25,"Plata","star"),
+      metric("one-more-time","Una vez más","Registra 10 repeticiones",rewatchTotal,10,"Oro","shuffle"),
+      metric("watcher-notes","Notas del Vigilante","Escribe notas en 25 títulos",notesTotal,25,"Plata","note"),
+      metric("reality-curator","Curador de realidades","Desbloquea 50 pósteres digitales",watched.size,50,"Oro","bookmark"),
+      route("multiverse-museum","Museo del multiverso","Completa la colección digital estrenada",releasedIds,"Diamante","trophy",2),
+      route("portals-open","Los portales están abiertos","Completa la ruta narrativa hasta Endgame",dependencyRoute("endgame").map((item)=>item.id),"Oro","route"),
+      route("multiverse-visitors","Visitantes de otros universos","Completa la ruta narrativa hasta No Way Home",dependencyRoute("no-way-home").map((item)=>item.id),"Oro","route"),
+      route("ready-doomsday","Preparado para el fin","Completa la ruta requerida de Doomsday cuando se estrene",dependencyRoute("doomsday").map((item)=>item.id),"Diamante","target",2),
+      route("battleworld-destiny","Destino: Battleworld","Completa la ruta requerida de Secret Wars cuando se estrene",dependencyRoute("secret-wars").map((item)=>item.id),"Diamante","route",2),
+    ];
+  }, [achievementRecords, customLists.length, history, notes, ratings, releasedItems, rewatches, watched]);
   const labelLayout = useMemo(() => {
     const result = new Map<string, { below: boolean; offset: number; shift: number; leaderLength: number; leaderAngle: number }>();
     // Keep collision packing in lockstep with the final card widths in styles.css.
@@ -565,20 +664,41 @@ export function App() {
     return result;
   }, [zoom]);
 
-  const notify = useCallback((message: string) => {
-    setToast(message);
+  const visibleMapItems = useMemo(() => {
+    if (mapScroll.width <= 1) return ITEMS;
+    const buffer = Math.max(720, mapScroll.width * .75);
+    const min = mapScroll.left - buffer;
+    const max = mapScroll.left + mapScroll.width + buffer;
+    return ITEMS.filter((item) => {
+      const screenX = xOf(item.releaseValue) * zoom;
+      return (screenX >= min && screenX <= max) || item.id === selected?.id || routeFocus.has(item.id) || KEY_IDS.has(item.id);
+    });
+  }, [mapScroll.left, mapScroll.width, routeFocus, selected?.id, zoom]);
+
+  const notify = useCallback((message: string, action?: { label: string; run: () => void }) => {
+    setToast({ message, actionLabel: action?.label, onAction: action?.run });
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(""), 2600);
+    toastTimer.current = window.setTimeout(() => setToast(null), action ? 5200 : 2600);
   }, []);
 
   useEffect(()=>{
     if(!preferences.achievements)return;
-    let previous:string[]=[]; try{previous=JSON.parse(localStorage.getItem(UNLOCKED_ACHIEVEMENTS_KEY)||"[]");}catch{}
-    const unlocked=achievements.filter((achievement)=>achievement.unlocked).map((achievement)=>achievement.id);
-    const fresh=achievements.find((achievement)=>achievement.unlocked&&!previous.includes(achievement.id));
-    localStorage.setItem(UNLOCKED_ACHIEVEMENTS_KEY,JSON.stringify(unlocked));
-    if(fresh&&previous.length>0)notify(`Logro desbloqueado: ${fresh.title}`);
-  },[achievements,notify,preferences.achievements]);
+    const previous=achievementRecords;
+    const next={...previous};
+    let fresh:Achievement|undefined;
+    achievements.forEach((achievement)=>{
+      if(!achievement.unlocked||next[achievement.id])return;
+      next[achievement.id]={id:achievement.id,version:achievement.version,unlockedAt:new Date().toISOString(),progressSnapshot:{completedIds:achievement.completedIds,requiredIds:achievement.requiredIds}};
+      if(Object.keys(previous).length>0&&!fresh)fresh=achievement;
+    });
+    if(Object.keys(next).length!==Object.keys(previous).length){
+      setAchievementRecords(next);
+      localStorage.setItem(ACHIEVEMENT_RECORDS_KEY,JSON.stringify(next));
+      localStorage.setItem(UNLOCKED_ACHIEVEMENTS_KEY,JSON.stringify(Object.keys(next)));
+      window.dispatchEvent(new CustomEvent("nexus:local-change",{detail:{kind:"achievement"}}));
+    }
+    if(fresh)notify(`Logro desbloqueado: ${fresh.title}`);
+  },[achievementRecords,achievements,notify,preferences.achievements]);
 
   useEffect(() => {
     try {
@@ -614,9 +734,39 @@ export function App() {
     const localY = clientY === undefined ? viewport.clientHeight / 2 : clientY - rect.top;
     const worldX = (viewport.scrollLeft + localX) / zoom;
     const verticalRatio = (viewport.scrollTop + localY) / verticalMetrics(zoom).height;
+    setZooming(true);
+    if (zoomTimer.current) window.clearTimeout(zoomTimer.current);
+    zoomTimer.current = window.setTimeout(() => setZooming(false), 180);
     setZoom(next);
     requestAnimationFrame(() => viewport.scrollTo({ left: worldX * next - localX, top: verticalRatio * verticalMetrics(next).height - localY }));
   }, [zoom]);
+
+  useEffect(() => {
+    if (view !== "map" || !selected) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    let frame = 0;
+    const keepSelectionVisible = () => {
+      const node = viewport.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(selected.id)}"]`);
+      const panel = document.querySelector<HTMLElement>(".detail-panel");
+      if (!node || !panel) return;
+      const viewportRect = viewport.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const safeLeft = viewportRect.left + 34;
+      const safeRight = Math.max(safeLeft + 180, Math.min(viewportRect.right, panelRect.left) - 30);
+      const safeCenter = (safeLeft + safeRight) / 2;
+      const nodeCenter = (nodeRect.left + nodeRect.right) / 2;
+      if (nodeRect.right > safeRight || nodeRect.left < safeLeft) {
+        viewport.scrollBy({ left: nodeCenter - safeCenter, behavior: preferences.reduceMotion ? "auto" : "smooth" });
+      }
+    };
+    frame = requestAnimationFrame(() => requestAnimationFrame(keepSelectionVisible));
+    const panel = document.querySelector<HTMLElement>(".detail-panel");
+    const observer = panel && "ResizeObserver" in window ? new ResizeObserver(keepSelectionVisible) : null;
+    if (panel && observer) observer.observe(panel);
+    return () => { cancelAnimationFrame(frame); observer?.disconnect(); };
+  }, [detailMode, preferences.reduceMotion, selected, view, zoom]);
 
   const openGlobalHit = useCallback((hit: GlobalHit) => {
     setGlobalSearchOpen(false); setGlobalQuery(""); setGlobalIndex(0); setSelected(hit.item);
@@ -640,7 +790,7 @@ export function App() {
       } else if (!globalSearchOpen && (event.key === "+" || event.key === "=")) changeZoom(zoom + 0.1);
       else if (!globalSearchOpen && event.key === "-") changeZoom(zoom - 0.1);
       else if (event.key.toLowerCase() === "f" && document.activeElement?.tagName !== "INPUT") fitMap();
-      else if (event.key === "Escape") { setSelected(null); setQuery(""); setGlobalSearchOpen(false); setSettingsOpen(false); }
+      else if (event.key === "Escape") { setSelected(null); setDetailPinned(false); setQuery(""); setGlobalSearchOpen(false); setSettingsOpen(false); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -669,6 +819,8 @@ export function App() {
 
   function toggleWatched(item: MapItem) {
     const willWatch = !watched.has(item.id);
+    const previousEpisodes = [...(episodes[item.id] || [])];
+    const previousDate = watchedDates[item.id];
     touchActivity(item, willWatch ? "watched" : "unwatched");
     if (willWatch) setWatchedDates((current) => ({ ...current, [item.id]: current[item.id] || new Date().toISOString().slice(0, 10) }));
     setWatched((current) => {
@@ -678,9 +830,20 @@ export function App() {
     });
     const total = EPISODE_COUNTS[item.id] || 0;
     if (total) setEpisodes((current) => ({ ...current, [item.id]: watched.has(item.id) ? [] : Array.from({ length: total }, (_, index) => index + 1) }));
+    notify(willWatch ? "Marcado como visto" : "Marcado como pendiente", { label: "Deshacer", run: () => {
+      setWatched((current) => { const next = new Set(current); if (willWatch) next.delete(item.id); else next.add(item.id); return next; });
+      if (total) setEpisodes((current) => ({ ...current, [item.id]: previousEpisodes }));
+      setWatchedDates((current) => { const next={...current}; if (previousDate) next[item.id]=previousDate; else delete next[item.id]; return next; });
+      touchActivity(item,"undo");
+      notify("Cambio deshecho");
+    }});
   }
 
   function toggleEpisode(item: MapItem, episode: number) {
+    const previousEpisodes = [...(episodes[item.id] || [])];
+    const wasWatched = watched.has(item.id);
+    const previousDate = watchedDates[item.id];
+    const completing = !previousEpisodes.includes(episode);
     touchActivity(item, "episode");
     const total = EPISODE_COUNTS[item.id] || 0;
     setEpisodes((current) => {
@@ -694,6 +857,13 @@ export function App() {
       });
       return { ...current, [item.id]: values };
     });
+    notify(completing ? `Capítulo ${episode} completado` : `Capítulo ${episode} marcado como pendiente`, { label:"Deshacer", run:()=>{
+      setEpisodes((current)=>({...current,[item.id]:previousEpisodes}));
+      setWatched((current)=>{const next=new Set(current);if(wasWatched)next.add(item.id);else next.delete(item.id);return next;});
+      setWatchedDates((current)=>{const next={...current};if(previousDate)next[item.id]=previousDate;else delete next[item.id];return next;});
+      touchActivity(item,"undo");
+      notify("Cambio deshecho");
+    }});
   }
 
   function jumpToYear(year: number) {
@@ -798,6 +968,18 @@ export function App() {
     setRouteFocus(new Set(dependencyRoute(item.id, includeContext).map((entry) => entry.id)));
     setRouteTarget(item);
     openInMap(item, true);
+  }
+
+  function showAchievementRoute(achievement: Achievement) {
+    const routeIds=achievement.requiredIds.filter((id)=>ITEM_BY_ID.has(id));
+    if(!routeIds.length){notify("Este logro se obtiene con actividad general, no con una ruta concreta.");return;}
+    const target=ITEM_BY_ID.get(routeIds.find((id)=>!watched.has(id))||routeIds.at(-1)!);
+    if(!target)return;
+    setRouteFocus(new Set(routeIds));
+    setRouteTarget(target);
+    setSelected(null);
+    setPendingMapItem(target);
+    setView("map");
   }
 
   function isSpoilerLocked(item: MapItem) {
@@ -914,7 +1096,7 @@ export function App() {
 
         <div
           ref={viewportRef}
-          className={`map-viewport ${dragging ? "is-dragging" : ""} ${zoom < .38 ? "zoom-overview" : zoom < .78 ? "zoom-medium" : "zoom-close"}`}
+          className={`map-viewport ${dragging ? "is-dragging" : ""} ${dragging || zooming ? "is-interacting" : ""} ${zoom < .38 ? "zoom-overview" : zoom < .78 ? "zoom-medium" : "zoom-close"}`}
           onScroll={updateMapScroll}
           onWheel={(event) => { if (event.ctrlKey) { event.preventDefault(); changeZoom(zoom - event.deltaY * .0012, event.clientX, event.clientY); } }}
           onPointerDown={(event) => { if ((event.target as HTMLElement).closest("button")) return; const viewport = viewportRef.current; if (!viewport) return; setDragging(true); dragRef.current = { x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop }; viewport.setPointerCapture(event.pointerId); }}
@@ -929,7 +1111,7 @@ export function App() {
               })}</div>
               <MapLines activeTrack={activeTrack} zoom={zoom} mapHeight={mapHeight} hideConnections={spoilerSafe || routeFocus.size > 0} />
               {routeTarget && <NarrativeOverlay targetId={routeTarget.id} zoom={zoom} mapHeight={mapHeight}/>} 
-              {ITEMS.map((item) => {
+              {visibleMapItems.map((item) => {
                 const track = TRACKS.find((entry) => entry.id === item.trackId)!;
                 const layout = labelLayout.get(item.id) || { below: false, offset: 30, shift: 0, leaderLength: 15, leaderAngle: -90 };
                 const completed = watched.has(item.id);
@@ -938,11 +1120,11 @@ export function App() {
                 const episodeTotal = EPISODE_COUNTS[item.id] || 0;
                 const episodeDone = episodes[item.id]?.length || 0;
                 const spoilerLocked = isSpoilerLocked(item);
-                return <button key={item.id} data-track={item.trackId} data-year={Math.floor(item.releaseValue)} className={`station ${layout.below ? "station-below" : ""} ${completed ? "is-complete" : ""} ${selected?.id === item.id ? "is-selected" : ""} ${isKey ? "is-key" : ""} ${muted ? "is-muted" : ""} ${spoilerLocked ? "is-spoiler" : ""} ${routeFocus.has(item.id) ? "is-route" : ""}`} style={{ left: xOf(item.releaseValue) * zoom, top: yOfTrack(item.trackId, zoom), "--station": track.color, "--card-offset": `${layout.offset}px`, "--label-shift": `${layout.shift}px` } as React.CSSProperties} onClick={() => spoilerLocked ? notify("Completa el título anterior para revelar este punto") : setSelected(item)} title={spoilerLocked ? "Contenido protegido" : `${item.title} · ${item.date}`}>
+                return <button key={item.id} data-item-id={item.id} data-track={item.trackId} data-year={Math.floor(item.releaseValue)} className={`station ${layout.below ? "station-below" : ""} ${completed ? "is-complete" : ""} ${selected?.id === item.id ? "is-selected" : ""} ${isKey ? "is-key" : ""} ${muted ? "is-muted" : ""} ${spoilerLocked ? "is-spoiler" : ""} ${routeFocus.has(item.id) ? "is-route" : ""}`} style={{ left: xOf(item.releaseValue) * zoom, top: yOfTrack(item.trackId, zoom), "--station": track.color, "--card-offset": `${layout.offset}px`, "--label-shift": `${layout.shift}px` } as React.CSSProperties} onClick={() => spoilerLocked ? notify("Completa el título anterior para revelar este punto") : setSelected(item)} title={spoilerLocked ? "Contenido protegido" : `${item.title} · ${item.date}`}>
                   <span className="station-leader" style={{ width: `${layout.leaderLength}px`, transform: `rotate(${layout.leaderAngle}deg)` }}/>
                   <span className="station-dot">{completed && <Icon name="check" size={11}/>}</span>
                   <span className="station-card">
-                    <img className="station-poster" src={posterFor(item, "thumb")} alt="" loading="lazy"/>
+                    <img className="station-poster" src={posterFor(item, "thumb")} alt="" loading="lazy" decoding="async" fetchPriority={selected?.id===item.id?"high":"low"}/>
                     <span className="station-copy"><strong>{spoilerLocked ? "Contenido oculto" : item.title}</strong><small>{spoilerLocked ? "Protegido contra spoilers" : item.date}</small>{!spoilerLocked && episodeTotal > 0 && <i><b style={{ width: `${(episodeDone / episodeTotal) * 100}%` }}/></i>}</span>
                   </span>
                 </button>;
@@ -952,7 +1134,6 @@ export function App() {
           </div>
         </div>
 
-        <MiniMap zoom={zoom} mapScroll={mapScroll} activeTrack={activeTrack} onNavigate={(ratio) => { const viewport = viewportRef.current; if (viewport) viewport.scrollTo({ left: ratio * MAP_WIDTH * zoom - viewport.clientWidth / 2, behavior: "smooth" }); }} />
       </section> : view === "dashboard" ? <Dashboard
         watched={watched}
         episodes={episodes}
@@ -975,7 +1156,7 @@ export function App() {
         onOpenDetail={setSelected}
         onOpenMap={openInMap}
         onToggleSpoilers={() => setSpoilerSafe((value) => !value)}
-      /> : view === "explore" ? <DiscoveryHub items={releasedItems.map((item):DiscoveryItem=>({id:item.id,title:item.title,year:Math.floor(item.releaseValue),type:item.type,saga:item.saga||trackForId(item.trackId)?.short||"Marvel",poster:posterFor(item,"card"),backdrop:artworkFor(item,"hero")}))} watched={watched} onOpen={(id)=>{const item=ITEM_BY_ID.get(id);if(item)setSelected(item);}}/> : view === "routes" ? <RoutesView watched={watched} onOpenDetail={setSelected} onOpenMap={openInMap} onShowRoute={showRouteInMap} /> : view === "planner" ? <MarathonPlanner watched={watched} episodes={episodes} author={activeProfile?.name||"Nexus"} onToggleWatched={toggleWatched} onToggleEpisode={toggleEpisode} onOpenDetail={setSelected} notify={notify}/> : view === "calendar" ? <MarvelCalendar onOpenDetail={setSelected} notify={notify}/> : view === "profiles" ? <MyProfileView profile={activeProfile} watched={watched} ratings={ratings} favorites={favorites} history={history} rewatches={rewatches} achievements={preferences.achievements ? achievements : []} episodeCount={stats.episodeDone} completedLines={stats.completedLines} onOpenCollection={()=>setView("explore")}/> : <ListView
+      /> : view === "explore" ? <DiscoveryHub items={releasedItems.map((item):DiscoveryItem=>({id:item.id,title:item.title,year:Math.floor(item.releaseValue),type:item.type,saga:item.saga||trackForId(item.trackId)?.short||"Marvel",poster:posterFor(item,"card"),backdrop:artworkFor(item,"hero")}))} watched={watched} onOpen={(id)=>{const item=ITEM_BY_ID.get(id);if(item)setSelected(item);}}/> : view === "routes" ? <RoutesView watched={watched} onOpenDetail={setSelected} onOpenMap={openInMap} onShowRoute={showRouteInMap} /> : view === "planner" ? <MarathonPlanner watched={watched} episodes={episodes} author={activeProfile?.name||"Nexus"} onToggleWatched={toggleWatched} onToggleEpisode={toggleEpisode} onOpenDetail={setSelected} notify={notify}/> : view === "calendar" ? <MarvelCalendar onOpenDetail={setSelected} notify={notify}/> : view === "profiles" ? <MyProfileView profile={activeProfile} watched={watched} ratings={ratings} favorites={favorites} history={history} rewatches={rewatches} achievements={preferences.achievements ? achievements : []} episodeCount={stats.episodeDone} completedLines={stats.completedLines} onOpenCollection={()=>setView("explore")} onOpenAchievementRoute={showAchievementRoute}/> : <ListView
         watchlist={watchlist}
         ignored={ignored}
         favorites={favorites}
@@ -991,11 +1172,11 @@ export function App() {
         onOpenMap={openInMap}
       />}
 
-      {selected && <DetailPanel item={selected} watched={watched.has(selected.id)} episodes={episodes[selected.id] || []} saved={watchlist.has(selected.id)} ignored={ignored.has(selected.id)} favorite={favorites.has(selected.id)} rating={ratings[selected.id] || 0} note={notes[selected.id] || ""} watchedDate={watchedDates[selected.id] || ""} rewatchCount={rewatches[selected.id] || 0} customLists={customLists} onClose={() => setSelected(null)} onToggleWatched={() => toggleWatched(selected)} onToggleEpisode={(episode) => toggleEpisode(selected, episode)} onToggleWatchlist={() => toggleWatchlist(selected)} onToggleFavorite={() => toggleFavorite(selected)} onRate={(value) => rateItem(selected, value)} onSaveNote={(value) => saveNote(selected, value)} onWatchedDate={(value) => setWatchedDates((current) => ({ ...current, [selected.id]: value }))} onRewatch={() => registerRewatch(selected)} onAddToList={(listId) => addToCustomList(selected, listId)} onIgnore={() => ignored.has(selected.id) ? restoreItem(selected) : ignoreItem(selected)} onNavigate={(id) => { const target = ITEM_BY_ID.get(id); if (target) setSelected(target); }} onShowRoute={(includeContext) => showRouteInMap(selected, includeContext)} />}
+      {selected && <DetailPanel item={selected} mode={detailMode} pinned={detailPinned} watched={watched.has(selected.id)} episodes={episodes[selected.id] || []} saved={watchlist.has(selected.id)} ignored={ignored.has(selected.id)} favorite={favorites.has(selected.id)} rating={ratings[selected.id] || 0} note={notes[selected.id] || ""} watchedDate={watchedDates[selected.id] || ""} rewatchCount={rewatches[selected.id] || 0} customLists={customLists} onClose={() => { setSelected(null); setDetailPinned(false); }} onMode={setDetailMode} onPinned={() => setDetailPinned((value)=>!value)} onToggleWatched={() => toggleWatched(selected)} onToggleEpisode={(episode) => toggleEpisode(selected, episode)} onToggleWatchlist={() => toggleWatchlist(selected)} onToggleFavorite={() => toggleFavorite(selected)} onRate={(value) => rateItem(selected, value)} onSaveNote={(value) => saveNote(selected, value)} onWatchedDate={(value) => setWatchedDates((current) => ({ ...current, [selected.id]: value }))} onRewatch={() => registerRewatch(selected)} onAddToList={(listId) => addToCustomList(selected, listId)} onIgnore={() => ignored.has(selected.id) ? restoreItem(selected) : ignoreItem(selected)} onNavigate={(id) => { const target = ITEM_BY_ID.get(id); if (target) setSelected(target); }} onShowRoute={(includeContext) => showRouteInMap(selected, includeContext)} />}
       {globalSearchOpen && <GlobalSearch query={globalQuery} setQuery={(value) => { setGlobalQuery(value); setGlobalIndex(0); }} hits={globalHits} activeIndex={globalIndex} onActive={setGlobalIndex} onOpen={openGlobalHit} onClose={() => { setGlobalSearchOpen(false); setGlobalQuery(""); }}/>} 
       {settingsOpen && <PreferencesPanel value={preferences} onChange={setPreferences} onClose={() => setSettingsOpen(false)}/>} 
       <CloudWorkspace open={cloudOpen} onClose={() => setCloudOpen(false)} localProfiles={profiles} activeProfileId={activeProfileId} onAddLocalProfile={addLocalCloudProfile} onRemoveLocalProfile={removeLocalCloudProfile} onSwitchLocalProfile={switchProfile} notify={notify}/>
-      {toast && <div className="toast"><Icon name="check"/>{toast}</div>}
+      {toast && <div className="toast"><Icon name="check"/><span>{toast.message}</span>{toast.onAction&&<button onClick={()=>{const action=toast.onAction;setToast(null);action?.();}}>{toast.actionLabel}</button>}</div>}
     </main>
   );
 }
@@ -1303,8 +1484,9 @@ function MarvelCalendar({ onOpenDetail, notify }: { onOpenDetail: (item: MapItem
   </section>;
 }
 
-function MyProfileView({ profile, watched, ratings, favorites, history, rewatches, achievements, episodeCount, completedLines, onOpenCollection }: { profile:Profile|undefined;watched:Set<string>;ratings:Record<string,number>;favorites:Set<string>;history:ActivityEvent[];rewatches:Record<string,number>;achievements:Achievement[];episodeCount:number;completedLines:number;onOpenCollection:()=>void }) {
+function MyProfileView({ profile, watched, ratings, favorites, history, rewatches, achievements, episodeCount, completedLines, onOpenCollection, onOpenAchievementRoute }: { profile:Profile|undefined;watched:Set<string>;ratings:Record<string,number>;favorites:Set<string>;history:ActivityEvent[];rewatches:Record<string,number>;achievements:Achievement[];episodeCount:number;completedLines:number;onOpenCollection:()=>void;onOpenAchievementRoute:(achievement:Achievement)=>void }) {
   const [account,setAccount]=useState<{name:string;email:string}>({name:profile?.name||"Mi recorrido",email:"Progreso personal"});
+  const [selectedAchievement,setSelectedAchievement]=useState<Achievement|null>(null);
   useEffect(()=>{const client=getSupabase();if(!client)return;let mounted=true;client.auth.getSession().then(({data})=>{if(!mounted||!data.session)return;setAccount({name:data.session.user.user_metadata.display_name||profile?.name||data.session.user.email?.split("@")[0]||"Mi recorrido",email:data.session.user.email||"Cuenta Nexus"});});return()=>{mounted=false;};},[profile?.name]);
   const currentYear = new Date().getFullYear();
   const monthly = Array.from({ length: 12 }, (_, month) => history.filter((event) => new Date(event.at).getFullYear() === currentYear && new Date(event.at).getMonth() === month && ["watched","rewatch"].includes(event.action)).length);
@@ -1319,9 +1501,23 @@ function MyProfileView({ profile, watched, ratings, favorites, history, rewatche
     <div className="dashboard-scroll"><section className="profile-overview"><div className="profile-progress-ring" style={{"--progress":`${progress*3.6}deg`} as React.CSSProperties}><strong>{progress}%</strong><small>completado</small></div><div><span className="dash-eyebrow">RESUMEN DEL MULTIVERSO</span><h2>{watched.size} historias forman parte de tu recorrido</h2><p>Has registrado aproximadamente {formatMinutes(estimatedWatchedMinutes)} entre películas, especiales y temporadas completas.</p></div><button onClick={onOpenCollection}>Ver colección digital <Icon name="chevron"/></button></section>
       <section className="personal-stats"><div className="dashboard-section-head"><div><span className="dash-eyebrow">Estadísticas personales</span><h2>{currentYear} en Nexus</h2></div><small>Basado en tu historial local</small></div><div className="stat-grid personal"><div><Icon name="film"/><span><strong>{watched.size}</strong><small>títulos vistos</small></span></div><div><Icon name="star"/><span><strong>{favorites.size}</strong><small>favoritos</small></span></div><div><Icon name="bar"/><span><strong>{average}</strong><small>calificación media</small></span></div><div><Icon name="shuffle"/><span><strong>{Object.values(rewatches).reduce((a,b)=>a+b,0)}</strong><small>repeticiones</small></span></div></div><div className="annual-chart">{monthly.map((value,index)=><div key={index}><i style={{ height:`${Math.max(4,value/maxMonth*100)}%` }}/><span>{["E","F","M","A","M","J","J","A","S","O","N","D"][index]}</span><small>{value}</small></div>)}</div></section>
       <section className="profile-milestones"><article><Icon name="check"/><strong>{episodeCount}</strong><small>capítulos vistos</small></article><article><Icon name="route"/><strong>{completedLines}</strong><small>universos completos</small></article><article><Icon name="trophy"/><strong>{unlocked}</strong><small>logros desbloqueados</small></article><article><Icon name="clock"/><strong>{formatMinutes(estimatedWatchedMinutes)}</strong><small>tiempo registrado</small></article></section>
-      {achievements.length>0&&<section className="achievement-section"><div className="dashboard-section-head"><div><span className="dash-eyebrow">Progreso opcional</span><h2>Logros del multiverso</h2></div><small>{achievements.filter((achievement)=>achievement.unlocked).length}/{achievements.length} desbloqueados</small></div><div className="achievement-grid">{achievements.map((achievement)=><article key={achievement.id} className={achievement.unlocked?"unlocked":""}><span><Icon name={achievement.icon}/></span><div><strong>{achievement.title}</strong><p>{achievement.description}</p><i><b style={{width:`${achievement.progress*100}%`}}/></i></div>{achievement.unlocked&&<Icon name="check"/>}</article>)}</div></section>}
+      {achievements.length>0&&<section className="achievement-section"><div className="dashboard-section-head"><div><span className="dash-eyebrow">Progreso opcional</span><h2>Logros del multiverso</h2></div><small>{achievements.filter((achievement)=>achievement.unlocked).length}/{achievements.length} desbloqueados</small></div><div className="achievement-grid">{achievements.map((achievement)=><button type="button" key={achievement.id} data-tier={achievement.tier.toLowerCase()} className={achievement.unlocked?"unlocked":""} onClick={()=>setSelectedAchievement(achievement)}><span><Icon name={achievement.icon}/></span><div><small>{achievement.tier}</small><strong>{achievement.title}</strong><p>{achievement.description}</p><i><b style={{width:`${achievement.progress*100}%`}}/></i></div>{achievement.unlocked&&<Icon name="check"/>}</button>)}</div></section>}
     </div>
+    {selectedAchievement&&<AchievementDetail achievement={selectedAchievement} watched={watched} onClose={()=>setSelectedAchievement(null)} onOpenRoute={()=>{onOpenAchievementRoute(selectedAchievement);setSelectedAchievement(null);}}/>}
   </section>;
+}
+
+function AchievementDetail({achievement,watched,onClose,onOpenRoute}:{achievement:Achievement;watched:Set<string>;onClose:()=>void;onOpenRoute:()=>void}){
+  const required=achievement.requiredIds.map((id)=>ITEM_BY_ID.get(id)).filter((item):item is MapItem=>Boolean(item));
+  useEffect(()=>{const close=(event:KeyboardEvent)=>{if(event.key==="Escape")onClose();};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[onClose]);
+  return <div className="achievement-detail-layer" role="dialog" aria-modal="true" aria-label={`Logro ${achievement.title}`} onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose();}}>
+    <section className="achievement-detail" data-tier={achievement.tier.toLowerCase()}>
+      <header><span><Icon name={achievement.icon} size={30}/></span><div><small>{achievement.tier} · versión {achievement.version}</small><h2>{achievement.title}</h2><p>{achievement.description}</p></div><button onClick={onClose} aria-label="Cerrar"><Icon name="close"/></button></header>
+      <div className="achievement-detail-progress"><span><strong>{Math.round(achievement.progress*100)}%</strong><small>{achievement.completedIds.length}/{achievement.requiredIds.length||1} requisitos</small></span><i><b style={{width:`${achievement.progress*100}%`}}/></i>{achievement.unlockedAt&&<p>Obtenido el {new Intl.DateTimeFormat("es-PE",{dateStyle:"long"}).format(new Date(achievement.unlockedAt))}</p>}<p>Rareza global: se calculará con perfiles públicos cuando la comunidad esté activa.</p></div>
+      {required.length>0?<div className="achievement-requirements"><h3>Títulos necesarios</h3>{required.map((item)=><article key={item.id} className={watched.has(item.id)?"complete":"pending"}><img src={posterFor(item,"thumb")} alt="" loading="lazy"/><span><small>{watched.has(item.id)?"Completado":"Pendiente"}</small><strong>{item.title}</strong><p>{item.date} · {trackForId(item.trackId)?.short}</p></span>{watched.has(item.id)?<Icon name="check"/>:<Icon name="clock"/>}</article>)}</div>:<p className="achievement-general-note">Este logro avanza con tu actividad general y no necesita una lista concreta de títulos.</p>}
+      <footer><button onClick={onClose}>Volver</button><button onClick={onOpenRoute} disabled={!required.length}><Icon name="route"/>Ver ruta en el mapa</button></footer>
+    </section>
+  </div>;
 }
 
 function ListView({ watchlist, ignored, favorites, ratings, customLists, watched, episodes, onToggleWatchlist, onToggleFavorite, onLists, onRestore, onOpenDetail, onOpenMap }: { watchlist: Set<string>; ignored: Set<string>; favorites: Set<string>; ratings: Record<string, number>; customLists: CustomList[]; watched: Set<string>; episodes: EpisodeState; onToggleWatchlist: (item: MapItem) => void; onToggleFavorite: (item: MapItem) => void; onLists: React.Dispatch<React.SetStateAction<CustomList[]>>; onRestore: (item: MapItem) => void; onOpenDetail: (item: MapItem) => void; onOpenMap: (item: MapItem) => void }) {
@@ -1415,16 +1611,6 @@ function Connection({ fromId, toX, toY, color, active, zoom, dashed = false }: {
   return <path className={`branch-connector ${active ? "" : "line-muted"} ${dashed ? "is-dashed" : ""}`} stroke={color} d={`M ${fromX} ${fromY} C ${fromX + 160} ${fromY}, ${toX - 220} ${toY}, ${toX} ${toY}`}/>;
 }
 
-function MiniMap({ zoom, mapScroll, activeTrack, onNavigate }: { zoom: number; mapScroll: { left: number; top: number; width: number; height: number }; activeTrack: string; onNavigate: (ratio: number) => void }) {
-  const left = Math.max(0, Math.min(100, (mapScroll.left / zoom / MAP_WIDTH) * 100));
-  const width = Math.min(100, (mapScroll.width / zoom / MAP_WIDTH) * 100);
-  return <div className="minimap" onPointerDown={(event) => { const rect = event.currentTarget.getBoundingClientRect(); onNavigate((event.clientX - rect.left) / rect.width); }}>
-    <span className="minimap-label">NAVEGADOR</span>
-    <div className="minimap-lines">{TRACKS.map((track) => <i key={track.id} style={{ background: track.color, opacity: activeTrack === "all" || activeTrack === track.id ? .9 : .13 }}/>)}</div>
-    <div className="minimap-window" style={{ left: `${left}%`, width: `${width}%` }}/>
-  </div>;
-}
-
 function RouteTree({ itemId, onNavigate, visited = new Set(), depth = 0 }: { itemId: string; onNavigate: (id: string) => void; visited?: Set<string>; depth?: number }) {
   if (visited.has(itemId) || depth > 8) return null;
   const nextVisited = new Set(visited).add(itemId);
@@ -1442,7 +1628,7 @@ function RouteTree({ itemId, onNavigate, visited = new Set(), depth = 0 }: { ite
   })}</div>;
 }
 
-function DetailPanel({ item, watched, episodes, saved, ignored, favorite, rating, note, watchedDate, rewatchCount, customLists, onClose, onToggleWatched, onToggleEpisode, onToggleWatchlist, onToggleFavorite, onRate, onSaveNote, onWatchedDate, onRewatch, onAddToList, onIgnore, onNavigate, onShowRoute }: { item: MapItem; watched: boolean; episodes: number[]; saved: boolean; ignored: boolean; favorite: boolean; rating: number; note: string; watchedDate: string; rewatchCount: number; customLists: CustomList[]; onClose: () => void; onToggleWatched: () => void; onToggleEpisode: (episode: number) => void; onToggleWatchlist: () => void; onToggleFavorite: () => void; onRate: (rating: number) => void; onSaveNote: (note: string) => void; onWatchedDate: (date: string) => void; onRewatch: () => void; onAddToList: (listId: string) => void; onIgnore: () => void; onNavigate: (id: string) => void; onShowRoute: (includeContext: boolean) => void }) {
+function DetailPanel({ item, mode, pinned, watched, episodes, saved, ignored, favorite, rating, note, watchedDate, rewatchCount, customLists, onClose, onMode, onPinned, onToggleWatched, onToggleEpisode, onToggleWatchlist, onToggleFavorite, onRate, onSaveNote, onWatchedDate, onRewatch, onAddToList, onIgnore, onNavigate, onShowRoute }: { item: MapItem; mode: DetailPanelMode; pinned: boolean; watched: boolean; episodes: number[]; saved: boolean; ignored: boolean; favorite: boolean; rating: number; note: string; watchedDate: string; rewatchCount: number; customLists: CustomList[]; onClose: () => void; onMode: (mode: DetailPanelMode) => void; onPinned: () => void; onToggleWatched: () => void; onToggleEpisode: (episode: number) => void; onToggleWatchlist: () => void; onToggleFavorite: () => void; onRate: (rating: number) => void; onSaveNote: (note: string) => void; onWatchedDate: (date: string) => void; onRewatch: () => void; onAddToList: (listId: string) => void; onIgnore: () => void; onNavigate: (id: string) => void; onShowRoute: (includeContext: boolean) => void }) {
   const total = EPISODE_COUNTS[item.id] || 0;
   const track = TRACKS.find((entry) => entry.id === item.trackId)!;
   const metadata = TITLE_METADATA[item.id];
@@ -1457,8 +1643,12 @@ function DetailPanel({ item, watched, episodes, saved, ignored, favorite, rating
   const postCredits = POST_CREDIT_COUNTS[item.id] ?? metadata?.postCredits;
   const seasons = SEASON_EPISODES[item.id] || (total ? [total] : []);
   let episodeOffset = 0;
-  return <aside className="detail-panel">
-    <button className="panel-close" onClick={onClose} aria-label="Cerrar"><Icon name="close"/></button>
+  return <aside className={`detail-panel ${mode} ${pinned?"pinned":""}`} aria-label={`Ficha de ${item.title}`}>
+    <div className="detail-panel-controls">
+      <button className={mode==="compact"?"active":""} onClick={()=>onMode(mode==="compact"?"full":"compact")} aria-label={mode==="compact"?"Ampliar panel":"Compactar panel"}><Icon name={mode==="compact"?"plus":"minus"}/><span>{mode==="compact"?"Ampliar":"Compactar"}</span></button>
+      <button className={pinned?"active":""} onClick={onPinned} aria-pressed={pinned} aria-label={pinned?"Desfijar panel":"Fijar panel"}><Icon name="target"/><span>{pinned?"Fijado":"Fijar"}</span></button>
+      <button onClick={onClose} aria-label="Cerrar panel"><Icon name="close"/><span>Esc</span></button>
+    </div>
     <div className="detail-visual"><img className="detail-artwork" src={artworkFor(item)} alt=""/><img className="detail-poster" src={posterFor(item, "full")} alt={`Póster de ${item.title}`}/><div className="poster-shade"/></div>
     <div className="detail-body">
       <div className="branch-pill" style={{ "--branch": track.color } as React.CSSProperties}><i/>{track.label}</div>

@@ -208,14 +208,39 @@ function arrayUnion(a: unknown, b: unknown) {
 
 function mergeSnapshots(older: NexusSnapshot, newer: NexusSnapshot): NexusSnapshot {
   const values = { ...older.values, ...newer.values };
-  const unionKeys = [NEXUS_KEYS.watched, NEXUS_KEYS.watchlist, NEXUS_KEYS.favorites, NEXUS_KEYS.favoriteTracks, NEXUS_KEYS.achievements];
+  const unionKeys = [NEXUS_KEYS.watchlist, NEXUS_KEYS.favorites, NEXUS_KEYS.favoriteTracks, NEXUS_KEYS.achievements];
   for (const key of unionKeys) values[key] = arrayUnion(older.values[key], newer.values[key]);
-  const objectKeys = [NEXUS_KEYS.episodes, NEXUS_KEYS.ratings, NEXUS_KEYS.notes, NEXUS_KEYS.watchedDates, NEXUS_KEYS.rewatches, NEXUS_KEYS.activity];
+  const objectKeys = [NEXUS_KEYS.ratings, NEXUS_KEYS.notes, NEXUS_KEYS.rewatches, NEXUS_KEYS.activity, NEXUS_KEYS.achievementRecords];
   for (const key of objectKeys) {
     const left = older.values[key];
     const right = newer.values[key];
     if (left && right && typeof left === "object" && typeof right === "object") values[key] = { ...left, ...right };
   }
+  // Películas y episodios usan la última actividad de cada título. Esto
+  // permite sincronizar también un "desmarcar", algo que una unión de arrays
+  // no puede representar correctamente.
+  const olderActivity = (older.values[NEXUS_KEYS.activity] || {}) as Record<string, number>;
+  const newerActivity = (newer.values[NEXUS_KEYS.activity] || {}) as Record<string, number>;
+  values[NEXUS_KEYS.activity] = Object.fromEntries([...new Set([...Object.keys(olderActivity), ...Object.keys(newerActivity)])].map((id) => [id, Math.max(olderActivity[id] || 0, newerActivity[id] || 0)]));
+  const olderWatched = new Set(Array.isArray(older.values[NEXUS_KEYS.watched]) ? older.values[NEXUS_KEYS.watched] as string[] : []);
+  const newerWatched = new Set(Array.isArray(newer.values[NEXUS_KEYS.watched]) ? newer.values[NEXUS_KEYS.watched] as string[] : []);
+  const allProgressIds = new Set([...olderWatched, ...newerWatched, ...Object.keys(olderActivity), ...Object.keys(newerActivity)]);
+  values[NEXUS_KEYS.watched] = [...allProgressIds].filter((id) => (newerActivity[id] || 0) >= (olderActivity[id] || 0) ? newerWatched.has(id) : olderWatched.has(id));
+  const olderEpisodes = (older.values[NEXUS_KEYS.episodes] || {}) as Record<string, number[]>;
+  const newerEpisodes = (newer.values[NEXUS_KEYS.episodes] || {}) as Record<string, number[]>;
+  const mergedEpisodes: Record<string, number[]> = {};
+  for (const id of new Set([...Object.keys(olderEpisodes), ...Object.keys(newerEpisodes)])) {
+    mergedEpisodes[id] = ((newerActivity[id] || 0) >= (olderActivity[id] || 0) ? newerEpisodes[id] : olderEpisodes[id]) || [];
+  }
+  values[NEXUS_KEYS.episodes] = mergedEpisodes;
+  const olderDates = (older.values[NEXUS_KEYS.watchedDates] || {}) as Record<string, string>;
+  const newerDates = (newer.values[NEXUS_KEYS.watchedDates] || {}) as Record<string, string>;
+  const mergedDates: Record<string, string> = {};
+  for (const id of new Set([...Object.keys(olderDates), ...Object.keys(newerDates)])) {
+    const value = (newerActivity[id] || 0) >= (olderActivity[id] || 0) ? newerDates[id] : olderDates[id];
+    if (value) mergedDates[id] = value;
+  }
+  values[NEXUS_KEYS.watchedDates] = mergedDates;
   return {
     ...newer,
     values,
@@ -280,10 +305,10 @@ export async function acceptInvitation(token: string, profileId: string) {
   return data;
 }
 
-export async function syncAchievements(profileId: string, achievementIds: string[]) {
+export async function syncAchievements(profileId: string, achievementIds: string[], records: Record<string, { version?: number; unlockedAt?: string; progressSnapshot?: unknown }> = {}) {
   const client = getSupabase();
   if (!client || !achievementIds.length) return;
-  const rows = achievementIds.map((achievementId) => ({ profile_id: profileId, achievement_id: achievementId, visibility: "private" }));
+  const rows = achievementIds.map((achievementId) => ({ profile_id: profileId, achievement_id: achievementId, unlocked_at: records[achievementId]?.unlockedAt || new Date().toISOString(), progress_snapshot: { version: records[achievementId]?.version || 1, ...(records[achievementId]?.progressSnapshot && typeof records[achievementId].progressSnapshot === "object" ? records[achievementId].progressSnapshot as object : {}) }, visibility: "private" }));
   const { error } = await client.from("user_achievements").upsert(rows, { onConflict: "profile_id,achievement_id" });
   if (error) throw error;
 }
@@ -376,7 +401,7 @@ export async function syncStructuredProfile(profileId: string) {
   }));
   const savedPreferences = await client.from("user_preferences").upsert({ profile_id: profileId, preferences }, { onConflict: "profile_id" });
   if (savedPreferences.error) throw savedPreferences.error;
-  await syncAchievements(profileId, storedArray(NEXUS_KEYS.achievements));
+  await syncAchievements(profileId, storedArray(NEXUS_KEYS.achievements), storedRecord(NEXUS_KEYS.achievementRecords));
 }
 
 export async function syncLocalMarathons(profileId: string) {
