@@ -8,6 +8,7 @@ import { CloudWorkspace } from "../app/cloud/cloud-workspace";
 import { getSupabase } from "../app/cloud/supabase";
 import { DiscoveryHub, type DiscoveryItem } from "../app/features/discovery-hub";
 import { decodeMarathonCode, encodeMarathonCode } from "../app/features/marathon-code";
+import { achievementArtFor } from "../app/features/achievement-art";
 
 type EpisodeState = Record<string, number[]>;
 type MapItem = MCUItem & { releaseValue: number; trackId: string; order: number };
@@ -19,13 +20,14 @@ type ActivityEvent = { id: string; at: number; action: "watched" | "unwatched" |
 type CustomList = { id: string; name: string; color: string; items: string[] };
 type Profile = { id: string; name: string; avatar: string; color: string; child: boolean; guest?: boolean };
 type SharedMarathon = { version: 1; id: string; name: string; description: string; createdAt: string; author: string; tasks: Array<{ itemId: string; episode?: number }>; coverIds: string[] };
+type SequenceMapData = { id: string; title: string; subtitle: string; tasks: SharedMarathon["tasks"]; kind: "marathon" | "era" | "journey" | "route" };
 type Preferences = { accent: "red" | "violet" | "cyan"; intensity: number; density: "comfortable" | "compact"; cardSize: "small" | "medium" | "large"; fontScale: number; highContrast: boolean; reduceMotion: boolean; achievements: boolean };
 type AchievementTier = "Bronce" | "Plata" | "Oro" | "Vibranium" | "Diamante";
 type AchievementRecord = { id: string; version: number; unlockedAt: string; progressSnapshot: { completedIds: string[]; requiredIds: string[] } };
 type Achievement = { id: string; version: number; title: string; description: string; icon: IconName; tier: AchievementTier; unlocked: boolean; progress: number; current: number; goal: number; requiredIds: string[]; completedIds: string[]; coverId?: string; unlockedAt?: string };
 type ToastState = { message: string; actionLabel?: string; onAction?: () => void };
 type DetailPanelMode = "full" | "compact";
-type GlobalHit = { key: string; item: MapItem; episode?: number; category: "Título" | "Capítulo" | "Personaje" | "Universo" | "Conexión"; context: string };
+type GlobalHit = { key: string; item: MapItem; episode?: number; category: "Título" | "Capítulo" | "Personaje" | "Universo" | "Conexión" | "Maratón"; context: string; sequence?:SequenceMapData };
 
 const WATCHED_KEY = "nexus-desktop-watched-v1";
 const EPISODES_KEY = "nexus-desktop-episodes-v1";
@@ -299,7 +301,7 @@ function globalHitsFor(rawQuery: string): GlobalHit[] {
     const episode = episodeMatch ? Number(episodeMatch[1]) : 0;
     if (episode > 0 && episode <= total && (titleMatch || normalize(track?.short || "").includes(query.replace(/(?:cap(?:í|i)tulo|episodio|ep)\s*\d+/i,"" ).trim()))) hits.push({ key:`episode-${item.id}-${episode}`, item, episode, category:"Capítulo", context:`${item.title} · Capítulo ${episode}` });
   }
-  const categoryRank = { Título:0, Capítulo:1, Personaje:2, Universo:3, Conexión:4 };
+  const categoryRank:Record<GlobalHit["category"],number> = { Maratón:0, Título:1, Capítulo:2, Personaje:3, Universo:4, Conexión:5 };
   return hits.sort((a,b) => categoryRank[a.category] - categoryRank[b.category] || a.item.releaseValue - b.item.releaseValue).slice(0,24);
 }
 
@@ -383,8 +385,32 @@ function useStoredProgress() {
   return { watched, setWatched, episodes, setEpisodes, watchlist, setWatchlist, ignored, setIgnored, favoriteTracks, setFavoriteTracks, intent, setIntent, spoilerSafe, setSpoilerSafe, activity, setActivity, ratings, setRatings, favorites, setFavorites, notes, setNotes, watchedDates, setWatchedDates, rewatches, setRewatches, history, setHistory, customLists, setCustomLists };
 }
 
+function readStoredMarathons(): SharedMarathon[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(CUSTOM_MARATHONS_KEY) || "[]");
+    return Array.isArray(value) ? value.filter((entry): entry is SharedMarathon => Boolean(entry?.id && entry?.name && Array.isArray(entry?.tasks))) : [];
+  } catch { return []; }
+}
+
+function useStoredMarathons() {
+  const [marathons, setMarathons] = useState<SharedMarathon[]>(readStoredMarathons);
+  const firstWrite = useRef(true);
+  useEffect(() => {
+    localStorage.setItem(CUSTOM_MARATHONS_KEY, JSON.stringify(marathons));
+    if (firstWrite.current) { firstWrite.current = false; return; }
+    window.dispatchEvent(new CustomEvent("nexus:local-change", { detail: { kind: "marathons" } }));
+  }, [marathons]);
+  useEffect(() => {
+    const reload = () => setMarathons(readStoredMarathons());
+    window.addEventListener("nexus:snapshot-applied", reload);
+    return () => window.removeEventListener("nexus:snapshot-applied", reload);
+  }, []);
+  return { marathons, setMarathons };
+}
+
 export function App() {
   const { watched, setWatched, episodes, setEpisodes, watchlist, setWatchlist, ignored, setIgnored, favoriteTracks, setFavoriteTracks, intent, setIntent, spoilerSafe, setSpoilerSafe, activity, setActivity, ratings, setRatings, favorites, setFavorites, notes, setNotes, watchedDates, setWatchedDates, rewatches, setRewatches, history, setHistory, customLists, setCustomLists } = useStoredProgress();
+  const { marathons, setMarathons } = useStoredMarathons();
   const [view, setView] = useState<AppView>("dashboard");
   const [selected, setSelected] = useState<MapItem | null>(null);
   const [activeTrack, setActiveTrack] = useState("all");
@@ -409,6 +435,9 @@ export function App() {
   const [pendingMapItem, setPendingMapItem] = useState<MapItem | null>(null);
   const [routeFocus, setRouteFocus] = useState<Set<string>>(new Set());
   const [routeTarget, setRouteTarget] = useState<MapItem | null>(null);
+  const [sequenceMap, setSequenceMap] = useState<SequenceMapData | null>(null);
+  const [editingMarathonId, setEditingMarathonId] = useState<string | null>(null);
+  const [libraryInitialTab,setLibraryInitialTab]=useState<"saved"|"marathons">("saved");
   const [profiles, setProfiles] = useState<Profile[]>(() => {
     try { const stored = JSON.parse(localStorage.getItem(PROFILES_KEY) || "[]"); if (stored.length) return stored; } catch { /* usa el perfil inicial */ }
     return [{ id: "principal", name: "Marco", avatar: "M", color: "#f2454b", child: false }];
@@ -420,7 +449,12 @@ export function App() {
   const toastTimer = useRef<number | null>(null);
   const zoomTimer = useRef<number | null>(null);
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0];
-  const globalHits = useMemo(() => globalHitsFor(globalQuery).filter((hit)=>!spoilerSafe||watched.has(hit.item.id)||!ITEMS.some((entry)=>entry.trackId===hit.item.trackId&&!entry.upcoming&&!watched.has(entry.id)&&entry.releaseValue<hit.item.releaseValue)), [globalQuery, spoilerSafe, watched]);
+  const globalHits = useMemo(() => {
+    const regular=globalHitsFor(globalQuery).filter((hit)=>!spoilerSafe||watched.has(hit.item.id)||!ITEMS.some((entry)=>entry.trackId===hit.item.trackId&&!entry.upcoming&&!watched.has(entry.id)&&entry.releaseValue<hit.item.releaseValue));
+    if(globalQuery.trim().length<2)return regular;
+    const marathonHits:GlobalHit[]=marathons.filter((marathon)=>normalize(`${marathon.name} ${marathon.description} ${marathon.author}`).includes(normalize(globalQuery))).flatMap((marathon):GlobalHit[]=>{const item=marathon.tasks.map((task)=>ITEM_BY_ID.get(task.itemId)).find((entry):entry is MapItem=>Boolean(entry));if(!item)return [];return [{key:`marathon-${marathon.id}`,item,category:"Maratón",context:`${marathon.tasks.length} sesiones · ${marathon.author}`,sequence:{id:marathon.id,title:marathon.name,subtitle:`${marathon.tasks.length} sesiones · ${marathon.author}`,tasks:marathon.tasks,kind:"marathon"}}];});
+    return [...marathonHits,...regular].slice(0,24);
+  }, [globalQuery, marathons, spoilerSafe, watched]);
 
   useEffect(() => { localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles)); }, [profiles]);
   useEffect(() => { localStorage.setItem(ACTIVE_PROFILE_KEY, activeProfileId); }, [activeProfileId]);
@@ -904,7 +938,7 @@ export function App() {
   }, [detailMode, preferences.reduceMotion, selected, view, zoom]);
 
   const openGlobalHit = useCallback((hit: GlobalHit) => {
-    setGlobalSearchOpen(false); setGlobalQuery(""); setGlobalIndex(0); setSelected(hit.item);
+    setGlobalSearchOpen(false); setGlobalQuery(""); setGlobalIndex(0); if(hit.sequence){setSelected(null);setSequenceMap(hit.sequence);}else setSelected(hit.item);
   }, []);
 
   useEffect(() => {
@@ -1173,6 +1207,19 @@ export function App() {
     if (viewport) setMapScroll({ left: viewport.scrollLeft, top: viewport.scrollTop, width: viewport.clientWidth, height: viewport.clientHeight });
   };
 
+  const openSequenceMap = useCallback((data: SequenceMapData) => {
+    const tasks = data.tasks.filter((task) => ITEM_BY_ID.has(task.itemId));
+    if (!tasks.length) { notify("Esta sucesión todavía no contiene títulos disponibles"); return; }
+    setSelected(null);
+    setSequenceMap({ ...data, tasks });
+  }, []);
+
+  const editMarathon = useCallback((id: string | null) => {
+    setEditingMarathonId(id);
+    setSelected(null);
+    setView("planner");
+  }, []);
+
   return (
     <main className="desktop-shell">
       <div className="native-titlebar"><div className="titlebar-brand"><span>N</span><strong>NEXUS</strong><small>MAPA DEL MULTIVERSO</small></div><div className="titlebar-actions"><div className="nexus-mode-tabs" role="group" aria-label="Nivel de spoilers"><button className={!spoilerSafe?"active complete":""} onClick={()=>setSpoilerSafe(false)}><Icon name="eye"/><span><strong>Universo completo</strong><small>Conexiones visibles</small></span></button><button className={spoilerSafe?"active protected":""} onClick={()=>setSpoilerSafe(true)}><Icon name="spark"/><span><strong>Ruta protegida</strong><small>Sin spoilers</small></span></button></div><div className="account-menu-wrap"><button className="titlebar-avatar" onClick={()=>setAccountMenuOpen((value)=>!value)} aria-expanded={accountMenuOpen} aria-label="Abrir menú personal">{activeProfile?.avatar||"N"}</button>{accountMenuOpen&&<div className="account-quick-menu"><div><span>{activeProfile?.avatar||"N"}</span><p><strong>{activeProfile?.name||"Mi cuenta"}</strong><small>Preferencias y sincronización</small></p></div><button onClick={()=>{setAccountMenuOpen(false);setCloudOpen(true)}}><Icon name="user"/>Cuenta y sincronización</button><button onClick={()=>{setAccountMenuOpen(false);setSettingsOpen(true)}}><Icon name="settings"/>Apariencia y acceso</button></div>}</div></div></div>
@@ -1181,7 +1228,7 @@ export function App() {
           <span className="nav-group-label">Principal</span>
           <button className={view === "dashboard" ? "active" : ""} onClick={() => { setSelected(null); setView("dashboard"); }}><Icon name="home"/><span><strong>Inicio</strong><small>Qué ver ahora</small></span></button>
           <button className={view === "map" ? "active" : ""} onClick={() => setView("map")}><Icon name="route"/><span><strong>Mapa</strong><small>Explorar universos</small></span></button>
-          <button className={view === "list" ? "active" : ""} onClick={() => { setSelected(null); setView("list"); }}><Icon name="bookmark"/><span><strong>Biblioteca</strong><small>{watchlist.size + favorites.size} personales</small></span></button>
+          <button className={view === "list" ? "active" : ""} onClick={() => { setSelected(null); setLibraryInitialTab("saved"); setView("list"); }}><Icon name="bookmark"/><span><strong>Biblioteca</strong><small>{watchlist.size + favorites.size + marathons.length} personales</small></span></button>
           <span className="nav-group-label">Planificar</span>
           <button className={view === "routes" ? "active" : ""} onClick={() => { setSelected(null); setView("routes"); }}><Icon name="shuffle"/><span><strong>Órdenes y rutas</strong><small>Cómo verlo</small></span></button>
           <button className={view === "planner" ? "active" : ""} onClick={() => { setSelected(null); setView("planner"); }}><Icon name="calendar"/><span><strong>Maratón</strong><small>Planificar sesiones</small></span></button>
@@ -1285,6 +1332,7 @@ export function App() {
         continueItem={continueItem}
         recommendations={recommendations}
         dailyRecommendation={dailyRecommendation}
+        marathons={marathons}
         stats={stats}
         onToggleTrack={toggleFavoriteTrack}
         onIntent={(nextIntent) => { setIntent(nextIntent); if (nextIntent === "random") setRandomSeed((value) => value + 1); }}
@@ -1297,35 +1345,45 @@ export function App() {
         onOpenMap={openInMap}
         onToggleSpoilers={() => setSpoilerSafe((value) => !value)}
         onOpenAchievements={() => setView("achievements")}
-      /> : view === "explore" ? <DiscoveryHub items={releasedItems.map((item):DiscoveryItem=>({id:item.id,title:item.title,year:Math.floor(item.releaseValue),type:item.type,saga:item.saga||trackForId(item.trackId)?.short||"Marvel",poster:posterFor(item,"card"),backdrop:artworkFor(item,"hero")}))} watched={watched} onOpen={(id)=>{const item=ITEM_BY_ID.get(id);if(item)setSelected(item);}}/> : view === "routes" ? <RoutesView watched={watched} onOpenDetail={setSelected} onOpenMap={openInMap} onShowRoute={showRouteInMap} /> : view === "planner" ? <MarathonPlanner watched={watched} episodes={episodes} author={activeProfile?.name||"Nexus"} onToggleWatched={toggleWatched} onToggleEpisode={toggleEpisode} onOpenDetail={setSelected} notify={notify}/> : view === "calendar" ? <MarvelCalendar onOpenDetail={setSelected} notify={notify}/> : view === "achievements" ? <AchievementsView achievements={preferences.achievements ? achievements : []} watched={watched} onOpenRoute={showAchievementRoute}/> : view === "profiles" ? <MyProfileView profile={activeProfile} watched={watched} ratings={ratings} favorites={favorites} history={history} rewatches={rewatches} achievements={preferences.achievements ? achievements : []} episodeCount={stats.episodeDone} completedLines={stats.completedLines} onOpenCollection={()=>setView("explore")} onOpenAchievements={()=>setView("achievements")} onOpenAchievementRoute={showAchievementRoute}/> : <ListView
+        onOpenMarathonLibrary={() => {setLibraryInitialTab("marathons");setView("list");}}
+        onOpenSequence={openSequenceMap}
+      /> : view === "explore" ? <DiscoveryHub items={releasedItems.map((item):DiscoveryItem=>({id:item.id,title:item.title,year:Math.floor(item.releaseValue),type:item.type,saga:item.saga||trackForId(item.trackId)?.short||"Marvel",poster:posterFor(item,"card"),backdrop:artworkFor(item,"hero")}))} watched={watched} onOpen={(id)=>{const item=ITEM_BY_ID.get(id);if(item)setSelected(item);}} onOpenSequence={(sequence)=>openSequenceMap({...sequence,tasks:sequence.itemIds.map((itemId)=>({itemId}))})}/> : view === "routes" ? <RoutesView watched={watched} onOpenDetail={setSelected} onOpenMap={openInMap} onShowRoute={showRouteInMap} onOpenSequence={openSequenceMap} /> : view === "planner" ? <MarathonPlanner watched={watched} episodes={episodes} author={activeProfile?.name||"Nexus"} marathons={marathons} editingMarathonId={editingMarathonId} onMarathons={setMarathons} onEditConsumed={()=>setEditingMarathonId(null)} onOpenLibrary={()=>{setLibraryInitialTab("marathons");setView("list");}} onOpenSequence={openSequenceMap} onToggleWatched={toggleWatched} onToggleEpisode={toggleEpisode} onOpenDetail={setSelected} notify={notify}/> : view === "calendar" ? <MarvelCalendar onOpenDetail={setSelected} notify={notify}/> : view === "achievements" ? <AchievementsView achievements={preferences.achievements ? achievements : []} watched={watched} onOpenRoute={showAchievementRoute}/> : view === "profiles" ? <MyProfileView profile={activeProfile} watched={watched} ratings={ratings} favorites={favorites} history={history} rewatches={rewatches} achievements={preferences.achievements ? achievements : []} episodeCount={stats.episodeDone} completedLines={stats.completedLines} onOpenCollection={()=>setView("explore")} onOpenAchievements={()=>setView("achievements")} onOpenAchievementRoute={showAchievementRoute}/> : <ListView
+        initialTab={libraryInitialTab}
         watchlist={watchlist}
         ignored={ignored}
         favorites={favorites}
         ratings={ratings}
         customLists={customLists}
+        marathons={marathons}
         watched={watched}
         episodes={episodes}
         onToggleWatchlist={toggleWatchlist}
         onToggleFavorite={toggleFavorite}
         onLists={setCustomLists}
+        onMarathons={setMarathons}
         onRestore={restoreItem}
         onOpenDetail={setSelected}
         onOpenMap={openInMap}
         onBrowseMap={() => setView("map")}
         onBrowseRecommendations={() => setView("dashboard")}
+        onCreateMarathon={()=>editMarathon(null)}
+        onEditMarathon={editMarathon}
+        onOpenSequence={openSequenceMap}
+        notify={notify}
       />}
 
       {selected && <DetailPanel item={selected} mode={detailMode} pinned={detailPinned} watched={watched.has(selected.id)} episodes={episodes[selected.id] || []} saved={watchlist.has(selected.id)} ignored={ignored.has(selected.id)} favorite={favorites.has(selected.id)} rating={ratings[selected.id] || 0} note={notes[selected.id] || ""} watchedDate={watchedDates[selected.id] || ""} rewatchCount={rewatches[selected.id] || 0} customLists={customLists} onClose={() => { setSelected(null); setDetailPinned(false); }} onMode={setDetailMode} onPinned={() => setDetailPinned((value)=>!value)} onToggleWatched={() => toggleWatched(selected)} onToggleEpisode={(episode) => toggleEpisode(selected, episode)} onToggleWatchlist={() => toggleWatchlist(selected)} onToggleFavorite={() => toggleFavorite(selected)} onRate={(value) => rateItem(selected, value)} onSaveNote={(value) => saveNote(selected, value)} onWatchedDate={(value) => setWatchedDates((current) => ({ ...current, [selected.id]: value }))} onRewatch={() => registerRewatch(selected)} onAddToList={(listId) => addToCustomList(selected, listId)} onIgnore={() => ignored.has(selected.id) ? restoreItem(selected) : ignoreItem(selected)} onNavigate={(id) => { const target = ITEM_BY_ID.get(id); if (target) setSelected(target); }} onShowRoute={(includeContext) => showRouteInMap(selected, includeContext)} />}
       {globalSearchOpen && <GlobalSearch query={globalQuery} setQuery={(value) => { setGlobalQuery(value); setGlobalIndex(0); }} hits={globalHits} activeIndex={globalIndex} onActive={setGlobalIndex} onOpen={openGlobalHit} onClose={() => { setGlobalSearchOpen(false); setGlobalQuery(""); }}/>} 
       {settingsOpen && <PreferencesPanel value={preferences} onChange={setPreferences} onClose={() => setSettingsOpen(false)}/>} 
       <CloudWorkspace open={cloudOpen} onClose={() => setCloudOpen(false)} localProfiles={profiles} activeProfileId={activeProfileId} onAddLocalProfile={addLocalCloudProfile} onRemoveLocalProfile={removeLocalCloudProfile} onSwitchLocalProfile={switchProfile} notify={notify}/>
+      {sequenceMap && <SequenceMapModal data={sequenceMap} watched={watched} episodes={episodes} onClose={()=>setSequenceMap(null)} onOpenItem={(item)=>{setSequenceMap(null);setSelected(item);}}/>}
       {toast && <div className="toast"><Icon name="check"/><span>{toast.message}</span>{toast.onAction&&<button onClick={()=>{const action=toast.onAction;setToast(null);action?.();}}>{toast.actionLabel}</button>}</div>}
     </main>
   );
 }
 
 function GlobalSearch({ query, setQuery, hits, activeIndex, onActive, onOpen, onClose }: { query:string; setQuery:(value:string)=>void; hits:GlobalHit[]; activeIndex:number; onActive:(index:number)=>void; onOpen:(hit:GlobalHit)=>void; onClose:()=>void }) {
-  return <div className="command-layer" role="dialog" aria-modal="true" aria-label="Búsqueda global" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="command-palette"><header><Icon name="search"/><input autoFocus value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Película, capítulo, personaje, universo o conexión…" aria-label="Buscar en todo Nexus"/><kbd>Esc</kbd></header>{query.trim().length < 2 ? <div className="command-empty"><Icon name="spark" size={30}/><strong>Busca cualquier parte del multiverso</strong><p>Prueba “Wanda”, “capítulo 3”, “X-Men”, “variante” o “Tony Stark”.</p></div> : hits.length ? <div className="command-results" role="listbox">{hits.map((hit,index)=><button key={hit.key} className={index===activeIndex ? "active" : ""} onMouseEnter={()=>onActive(index)} onClick={()=>onOpen(hit)} role="option" aria-selected={index===activeIndex}><img src={posterFor(hit.item,"thumb")} alt=""/><span><small>{hit.category}</small><strong>{hit.episode ? `${hit.item.title} · Capítulo ${hit.episode}` : hit.item.title}</strong><p>{hit.context}</p></span><Icon name="chevron"/></button>)}</div> : <div className="command-empty"><Icon name="search" size={30}/><strong>Sin coincidencias</strong><p>Prueba otro título, personaje o universo.</p></div>}<footer><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span>{hits.length} resultados</span></footer></section></div>;
+  return <div className="command-layer" role="dialog" aria-modal="true" aria-label="Búsqueda global" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="command-palette"><header><Icon name="search"/><input autoFocus value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Película, capítulo, personaje, universo o maratón…" aria-label="Buscar en todo Nexus"/><kbd>Esc</kbd></header>{query.trim().length < 2 ? <div className="command-empty"><Icon name="spark" size={30}/><strong>Busca cualquier parte del multiverso</strong><p>Prueba “Wanda”, “capítulo 3”, “X-Men”, “variante” o el nombre de un maratón.</p></div> : hits.length ? <div className="command-results" role="listbox">{hits.map((hit,index)=><button key={hit.key} className={index===activeIndex ? "active" : ""} onMouseEnter={()=>onActive(index)} onClick={()=>onOpen(hit)} role="option" aria-selected={index===activeIndex}><img src={hit.sequence?artworkFor(hit.item,"card"):posterFor(hit.item,"thumb")} alt=""/><span><small>{hit.category}</small><strong>{hit.sequence?hit.sequence.title:hit.episode ? `${hit.item.title} · Capítulo ${hit.episode}` : hit.item.title}</strong><p>{hit.context}</p></span><Icon name="chevron"/></button>)}</div> : <div className="command-empty"><Icon name="search" size={30}/><strong>Sin coincidencias</strong><p>Prueba otro título, personaje, universo o maratón.</p></div>}<footer><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span>{hits.length} resultados</span></footer></section></div>;
 }
 
 function PreferencesPanel({ value, onChange, onClose }: { value:Preferences; onChange:React.Dispatch<React.SetStateAction<Preferences>>; onClose:()=>void }) {
@@ -1344,6 +1402,7 @@ type DashboardProps = {
   continueItem: MapItem | null;
   recommendations: Recommendation[];
   dailyRecommendation: MapItem | null;
+  marathons: SharedMarathon[];
   stats: { episodeDone: number; seriesCompleted: number; moviesCompleted: number; completedLines: number; remainingMinutes: number; bestTrack: { track: (typeof TRACKS)[number]; ratio: number } | undefined; lastItem: MapItem | null | undefined };
   onToggleTrack: (trackId: string) => void;
   onIntent: (intent: Intent) => void;
@@ -1356,6 +1415,8 @@ type DashboardProps = {
   onOpenMap: (item: MapItem) => void;
   onToggleSpoilers: () => void;
   onOpenAchievements: () => void;
+  onOpenMarathonLibrary:()=>void;
+  onOpenSequence:(data:SequenceMapData)=>void;
 };
 
 function Dashboard(props: DashboardProps) {
@@ -1365,6 +1426,10 @@ function Dashboard(props: DashboardProps) {
   const continueDone = continueItem ? episodes[continueItem.id]?.length || 0 : 0;
   const nextEpisode = continueTotal ? Array.from({ length: continueTotal }, (_, index) => index + 1).find((episode) => !(episodes[continueItem!.id] || []).includes(episode)) : undefined;
   const bestTrackLabel = props.stats.bestTrack?.ratio ? props.stats.bestTrack.track.short : "Aún sin avance";
+  const activeMarathon=props.marathons.find((marathon)=>marathon.tasks.some((task)=>!marathonTaskDone(task,watched,episodes)))||props.marathons[0];
+  const marathonDone=activeMarathon?.tasks.filter((task)=>marathonTaskDone(task,watched,episodes)).length||0;
+  const marathonNext=activeMarathon?.tasks.find((task)=>!marathonTaskDone(task,watched,episodes));
+  const marathonNextItem=marathonNext?ITEM_BY_ID.get(marathonNext.itemId):undefined;
 
   return <section className="dashboard-workspace">
     <header className="dashboard-toolbar">
@@ -1401,6 +1466,8 @@ function Dashboard(props: DashboardProps) {
           </> : <div className="daily-empty"><Icon name="check"/><p>Ya terminaste todo lo publicado.</p></div>}
         </section>
       </div>
+
+      {activeMarathon&&<section className="dashboard-marathon-strip"><div className="dashboard-marathon-collage">{activeMarathon.coverIds.slice(0,4).map((id)=>ITEM_BY_ID.get(id)&&<img key={id} src={artworkFor(ITEM_BY_ID.get(id),"card")} alt="" loading="lazy"/>)}</div><div><span className="dash-eyebrow">CONTINUAR MARATÓN</span><h2>{activeMarathon.name}</h2><p>{marathonNextItem?`Siguiente: ${marathonNextItem.title}${marathonNext?.episode?` · capítulo ${marathonNext.episode}`:""}`:"Recorrido completado"}</p><i><b style={{width:`${marathonDone/Math.max(1,activeMarathon.tasks.length)*100}%`}}/></i></div><strong>{marathonDone}/{activeMarathon.tasks.length}</strong><button onClick={()=>props.onOpenSequence({id:activeMarathon.id,title:activeMarathon.name,subtitle:`${activeMarathon.tasks.length} sesiones · ${activeMarathon.author}`,tasks:activeMarathon.tasks,kind:"marathon"})}><Icon name="route"/>Abrir mapa</button><button onClick={props.onOpenMarathonLibrary}><Icon name="bookmark"/>Biblioteca</button></section>}
 
       <section className="dashboard-section recommendations-section">
         <div className="dashboard-section-head"><div><span className="dash-eyebrow">Selección explicada</span><h2>Recomendado para ti</h2></div><small>Ordenado según tu intención</small></div>
@@ -1461,7 +1528,7 @@ const ROUTE_MODES: Array<{ id: RouteMode; label: string; hint: string }> = [
 ];
 const CUSTOM_ROUTE_KEY = "nexus-desktop-custom-route-v1";
 
-function RoutesView({ watched, onOpenDetail, onOpenMap, onShowRoute }: { watched: Set<string>; onOpenDetail: (item: MapItem) => void; onOpenMap: (item: MapItem) => void; onShowRoute: (item: MapItem, includeContext?: boolean) => void }) {
+function RoutesView({ watched, onOpenDetail, onOpenMap, onShowRoute, onOpenSequence }: { watched: Set<string>; onOpenDetail: (item: MapItem) => void; onOpenMap: (item: MapItem) => void; onShowRoute: (item: MapItem, includeContext?: boolean) => void; onOpenSequence:(data:SequenceMapData)=>void }) {
   const [mode, setMode] = useState<RouteMode>("quick");
   const [targetId, setTargetId] = useState(() => ITEM_BY_ID.has("brand-new-day") ? "brand-new-day" : "no-way-home");
   const [includeContext, setIncludeContext] = useState(false);
@@ -1509,7 +1576,7 @@ function RoutesView({ watched, onOpenDetail, onOpenMap, onShowRoute }: { watched
       </section>}
 
       <section className="route-sequence">
-        <div className="dashboard-section-head"><div><span className="dash-eyebrow">Secuencia resultante</span><h2>{ROUTE_MODES.find((entry) => entry.id === mode)?.label}</h2></div><small>{routeItems.filter((item) => watched.has(item.id)).length}/{routeItems.length} completados</small></div>
+        <div className="dashboard-section-head"><div><span className="dash-eyebrow">Secuencia resultante</span><h2>{ROUTE_MODES.find((entry) => entry.id === mode)?.label}</h2></div><div className="sequence-heading-actions"><small>{routeItems.filter((item) => watched.has(item.id)).length}/{routeItems.length} completados</small><button disabled={!routeItems.length} onClick={()=>onOpenSequence({id:`route-${mode}-${target.id}`,title:ROUTE_MODES.find((entry)=>entry.id===mode)?.label||"Ruta Nexus",subtitle:mode==="quick"?`Preparación para ${target.title}`:"Orden de visualización",tasks:routeItems.map((item)=>({itemId:item.id})),kind:"route"})}><Icon name="route"/>Ver como mapa</button></div></div>
         {routeItems.length ? <div className="route-list">{routeItems.map((item, index) => {
           const directToNext = index < routeItems.length - 1 ? (NARRATIVE_LINKS[routeItems[index + 1].id] || []).find((edge) => edge.prerequisite === item.id) : undefined;
           return <React.Fragment key={`${item.id}-${index}`}><article className={`${watched.has(item.id) ? "complete " : ""}media-${item.type}`} style={mediaStyle(item)}><span className="route-index">{String(index + 1).padStart(2, "0")}</span><img src={posterFor(item)} alt=""/><div><small><b className="type-dot"/>{TYPE_LABEL[item.type]} · {trackForId(item.trackId)?.short} · {item.date}</small><h3>{item.title}</h3>{directToNext && <p style={{ "--edge": CONNECTION_COLOR[directToNext.kind] } as React.CSSProperties}><i/>{CONNECTION_LABEL[directToNext.kind]} para el siguiente título</p>}</div><div className="route-item-actions"><button onClick={() => onOpenDetail(item)}>Ficha</button><button title="Ver en mapa" onClick={() => onOpenMap(item)}><Icon name="route"/></button>{mode === "custom" && <><button title="Subir" disabled={index === 0} onClick={() => moveCustom(index, -1)}>↑</button><button title="Bajar" disabled={index === routeItems.length - 1} onClick={() => moveCustom(index, 1)}>↓</button><button title="Quitar" onClick={() => setCustomRoute((current) => current.filter((_id, currentIndex) => currentIndex !== index))}><Icon name="close"/></button></>}</div></article>{index < routeItems.length - 1 && <span className="route-step-line"/>}</React.Fragment>;
@@ -1537,85 +1604,962 @@ const isoDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() 
 const formatDate = (iso: string) => dateAtNoon(iso).toLocaleDateString("es-PE", { day: "numeric", month: "long", year: "numeric" });
 const daysUntil = (iso: string) => Math.ceil((dateAtNoon(iso).getTime() - new Date().setHours(0,0,0,0)) / 86400000);
 
-function MarathonPlanner({ watched, episodes, author, onToggleWatched, onToggleEpisode, onOpenDetail, notify }: { watched: Set<string>; episodes: EpisodeState; author:string; onToggleWatched: (item: MapItem) => void; onToggleEpisode: (item: MapItem, episode: number) => void; onOpenDetail: (item: MapItem) => void; notify: (message: string) => void }) {
-  const [plannerMode, setPlannerMode] = useState<"auto"|"custom">("auto");
+function MarathonPlanner({
+  watched,
+  episodes,
+  author,
+  marathons,
+  editingMarathonId,
+  onMarathons,
+  onEditConsumed,
+  onOpenLibrary,
+  onOpenSequence,
+  onToggleWatched,
+  onToggleEpisode,
+  onOpenDetail,
+  notify,
+}: {
+  watched: Set<string>;
+  episodes: EpisodeState;
+  author: string;
+  marathons: SharedMarathon[];
+  editingMarathonId: string | null;
+  onMarathons: React.Dispatch<React.SetStateAction<SharedMarathon[]>>;
+  onEditConsumed: () => void;
+  onOpenLibrary: () => void;
+  onOpenSequence: (data: SequenceMapData) => void;
+  onToggleWatched: (item: MapItem) => void;
+  onToggleEpisode: (item: MapItem, episode: number) => void;
+  onOpenDetail: (item: MapItem) => void;
+  notify: (message: string) => void;
+}) {
+  const [plannerMode, setPlannerMode] = useState<"auto" | "custom">("auto");
   const [targetId, setTargetId] = useState("secret-wars");
   const [trackId, setTrackId] = useState("route");
   const [hours, setHours] = useState(3);
   const [startDate, setStartDate] = useState(() => isoDate(new Date()));
-  const [days, setDays] = useState<Set<number>>(new Set([1,2,3,4,5,6,0]));
+  const [days, setDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5, 6, 0]));
   const [includeContext, setIncludeContext] = useState(false);
-  const [plan, setPlan] = useState<MarathonTask[]>(() => { try { return JSON.parse(localStorage.getItem(MARATHON_KEY) || "[]"); } catch { return []; } });
-  useEffect(() => localStorage.setItem(MARATHON_KEY, JSON.stringify(plan)), [plan]);
+  const [plan, setPlan] = useState<MarathonTask[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(MARATHON_KEY) || "[]");
+    } catch {
+      return [];
+    }
+  });
+  useEffect(
+    () => localStorage.setItem(MARATHON_KEY, JSON.stringify(plan)),
+    [plan],
+  );
+  useEffect(() => {
+    if (editingMarathonId) setPlannerMode("custom");
+  }, [editingMarathonId]);
 
   const buildPlan = (fromDate = startDate) => {
     const target = ITEM_BY_ID.get(targetId)!;
-    const sourceItems = trackId === "route" ? dependencyRoute(target.id, includeContext).filter((item) => item.id !== target.id || !target.upcoming) : ITEMS.filter((item) => item.trackId === trackId).sort((a,b) => a.releaseValue - b.releaseValue);
+    const sourceItems =
+      trackId === "route"
+        ? dependencyRoute(target.id, includeContext).filter(
+            (item) => item.id !== target.id || !target.upcoming,
+          )
+        : ITEMS.filter((item) => item.trackId === trackId).sort(
+            (a, b) => a.releaseValue - b.releaseValue,
+          );
     const tasks: Omit<MarathonTask, "date">[] = [];
     for (const item of sourceItems) {
       if (item.upcoming || watched.has(item.id)) continue;
       const total = EPISODE_COUNTS[item.id] || 0;
       if (total) {
         const complete = new Set(episodes[item.id] || []);
-        for (let episode = 1; episode <= total; episode += 1) if (!complete.has(episode)) {
-          const minutes = TITLE_METADATA[item.id]?.episodeDurations?.[episode - 1] || TITLE_METADATA[item.id]?.episodeRuntimeMinutes || EPISODE_RUNTIME_OVERRIDES[item.id] || (item.type === "animation" ? 24 : 42);
-          tasks.push({ key: `${item.id}-e${episode}`, itemId: item.id, episode, minutes, done: false });
-        }
-      } else tasks.push({ key: item.id, itemId: item.id, minutes: TITLE_METADATA[item.id]?.runtimeMinutes || RUNTIME_OVERRIDES[item.id] || 120, done: false });
+        for (let episode = 1; episode <= total; episode += 1)
+          if (!complete.has(episode)) {
+            const minutes =
+              TITLE_METADATA[item.id]?.episodeDurations?.[episode - 1] ||
+              TITLE_METADATA[item.id]?.episodeRuntimeMinutes ||
+              EPISODE_RUNTIME_OVERRIDES[item.id] ||
+              (item.type === "animation" ? 24 : 42);
+            tasks.push({
+              key: `${item.id}-e${episode}`,
+              itemId: item.id,
+              episode,
+              minutes,
+              done: false,
+            });
+          }
+      } else
+        tasks.push({
+          key: item.id,
+          itemId: item.id,
+          minutes:
+            TITLE_METADATA[item.id]?.runtimeMinutes ||
+            RUNTIME_OVERRIDES[item.id] ||
+            120,
+          done: false,
+        });
     }
     const capacity = Math.max(30, hours * 60);
-    const allowed = days.size ? days : new Set([0,1,2,3,4,5,6]);
+    const allowed = days.size ? days : new Set([0, 1, 2, 3, 4, 5, 6]);
     let cursor = dateAtNoon(fromDate);
-    const nextAllowed = () => { while (!allowed.has(cursor.getDay())) cursor.setDate(cursor.getDate() + 1); };
-    nextAllowed(); let used = 0;
+    const nextAllowed = () => {
+      while (!allowed.has(cursor.getDay()))
+        cursor.setDate(cursor.getDate() + 1);
+    };
+    nextAllowed();
+    let used = 0;
     const scheduled: MarathonTask[] = [];
     for (const task of tasks) {
-      if (used > 0 && used + task.minutes > capacity) { cursor.setDate(cursor.getDate() + 1); nextAllowed(); used = 0; }
-      scheduled.push({ ...task, date: isoDate(cursor) }); used += task.minutes;
+      if (used > 0 && used + task.minutes > capacity) {
+        cursor.setDate(cursor.getDate() + 1);
+        nextAllowed();
+        used = 0;
+      }
+      scheduled.push({ ...task, date: isoDate(cursor) });
+      used += task.minutes;
     }
-    setPlan(scheduled); notify(scheduled.length ? `Plan creado: ${scheduled.length} sesiones` : "No quedan títulos pendientes en esa ruta");
+    setPlan(scheduled);
+    notify(
+      scheduled.length
+        ? `Plan creado: ${scheduled.length} sesiones`
+        : "No quedan títulos pendientes en esa ruta",
+    );
   };
-  const reorganize = () => { setStartDate(isoDate(new Date())); buildPlan(isoDate(new Date())); notify("Días perdidos reorganizados desde hoy"); };
+  const reorganize = () => {
+    setStartDate(isoDate(new Date()));
+    buildPlan(isoDate(new Date()));
+    notify("Días perdidos reorganizados desde hoy");
+  };
   const groups = [...new Set(plan.map((task) => task.date))];
   const totalMinutes = plan.reduce((sum, task) => sum + task.minutes, 0);
   const completed = plan.filter((task) => task.done).length;
   const finishDate = groups.at(-1);
   const target = ITEM_BY_ID.get(targetId)!;
-  return <section className="dashboard-workspace planner-workspace">
-    <header className="dashboard-toolbar artwork-toolbar" style={{ "--hero": `url(${artworkFor(target)})` } as React.CSSProperties}><div><span className="dash-eyebrow">Planificador de maratones</span><h1>Llega preparado a cualquier estreno</h1><p>Convierte una ruta narrativa en sesiones realistas según tus horas libres.</p></div><div className="planner-target"><img src={posterFor(target, "thumb")} alt=""/><span><small>Objetivo actual</small><strong>{target.title}</strong></span></div></header>
-    <div className="dashboard-scroll"><div className="planner-mode"><button className={plannerMode==="auto"?"active":""} onClick={()=>setPlannerMode("auto")}><Icon name="spark"/>Plan automático</button><button className={plannerMode==="custom"?"active":""} onClick={()=>setPlannerMode("custom")}><Icon name="grip"/>Crear y compartir</button></div>{plannerMode === "auto" ? <>
-      <section className="planner-config">
-        <label><span>Objetivo final</span><select value={targetId} onChange={(event) => setTargetId(event.target.value)}>{ITEMS.filter((item) => item.upcoming || ["no-way-home","deadpool-wolverine","endgame"].includes(item.id)).sort((a,b) => a.releaseValue-b.releaseValue).map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}</select></label>
-        <label><span>Recorrido</span><select value={trackId} onChange={(event) => setTrackId(event.target.value)}><option value="route">Requisitos del objetivo</option>{TRACKS.map((track) => <option key={track.id} value={track.id}>{track.label}</option>)}</select></label>
-        <label><span>Horas libres por día</span><input type="number" min="0.5" max="12" step="0.5" value={hours} onChange={(event) => setHours(Number(event.target.value))}/></label>
-        <label><span>Comenzar</span><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)}/></label>
-        <div className="day-selector"><span>Días disponibles</span><div>{DAY_LABELS.map((label,index) => <button key={label} className={days.has(index) ? "active" : ""} onClick={() => setDays((current) => { const next = new Set(current); if (next.has(index)) next.delete(index); else next.add(index); return next; })}>{label}</button>)}</div></div>
-        <button className={`context-toggle ${includeContext ? "active" : ""}`} onClick={() => setIncludeContext((value) => !value)}><Icon name="spark"/><span><strong>Contexto ampliado</strong><small>{includeContext ? "Incluye referencias y variantes" : "Solo requisitos esenciales"}</small></span></button>
-        <button className="generate-plan" onClick={() => buildPlan()}><Icon name="calendar"/>Generar calendario</button>
-      </section>
-      {plan.length > 0 && <><section className="plan-summary"><div><strong>{formatMinutes(totalMinutes)}</strong><small>contenido pendiente</small></div><div><strong>{groups.length}</strong><small>días de maratón</small></div><div><strong>{completed}/{plan.length}</strong><small>sesiones completadas</small></div><div><strong>{finishDate ? formatDate(finishDate) : "—"}</strong><small>fecha de finalización</small></div><button onClick={reorganize}><Icon name="shuffle"/>Reorganizar días perdidos</button></section><div className="marathon-days">{groups.map((date, dayIndex) => { const tasks = plan.filter((task) => task.date === date); const isToday = date === isoDate(new Date()); return <section key={date} className={`marathon-day${isToday ? " today" : ""}`}><header><span className="day-index">{String(dayIndex + 1).padStart(2,"0")}</span><span><strong>{dateAtNoon(date).toLocaleDateString("es-PE", { weekday:"long", day:"numeric", month:"long" })}</strong><small>{formatMinutes(tasks.reduce((sum,task) => sum + task.minutes,0))}{isToday ? " · Hoy" : ""}</small></span><b>{tasks.filter((task) => task.done).length}/{tasks.length}</b></header><div>{tasks.map((task) => { const item = ITEM_BY_ID.get(task.itemId)!; return <article className={`${task.done ? "done " : ""}media-${item.type}`} style={mediaStyle(item)} key={task.key}><button className="task-check" onClick={() => { if (task.episode) onToggleEpisode(item, task.episode); else onToggleWatched(item); setPlan((current) => current.map((entry) => entry.key === task.key ? { ...entry, done: !entry.done } : entry)); }}><Icon name="check"/></button><button className="task-art" onClick={() => onOpenDetail(item)}><img src={artworkFor(item,"card")} alt={`Fotograma de ${item.title}`} loading="lazy"/><span>{TYPE_LABEL[item.type]}</span></button><button className="task-copy" onClick={() => onOpenDetail(item)}><small><i/>{trackForId(item.trackId)?.short} · {task.minutes} min</small><strong>{item.title}</strong><span>{task.episode ? `Capítulo ${task.episode}` : task.done ? "Completada" : "Pendiente"}</span></button></article>; })}</div></section>; })}</div></>}</> : <CustomMarathonBuilder author={author} onOpenDetail={onOpenDetail} notify={notify}/>} 
-    </div>
-  </section>;
+  return (
+    <section className="dashboard-workspace planner-workspace">
+      <header
+        className="dashboard-toolbar artwork-toolbar"
+        style={
+          { "--hero": `url(${artworkFor(target)})` } as React.CSSProperties
+        }
+      >
+        <div>
+          <span className="dash-eyebrow">Planificador de maratones</span>
+          <h1>Llega preparado a cualquier estreno</h1>
+          <p>
+            Convierte una ruta narrativa en sesiones realistas según tus horas
+            libres.
+          </p>
+        </div>
+        <div className="planner-target">
+          <img src={posterFor(target, "thumb")} alt="" />
+          <span>
+            <small>Objetivo actual</small>
+            <strong>{target.title}</strong>
+          </span>
+        </div>
+      </header>
+      <div className="dashboard-scroll">
+        <div className="planner-mode">
+          <button
+            className={plannerMode === "auto" ? "active" : ""}
+            onClick={() => setPlannerMode("auto")}
+          >
+            <Icon name="spark" />
+            Plan automático
+          </button>
+          <button
+            className={plannerMode === "custom" ? "active" : ""}
+            onClick={() => {
+              setPlannerMode("custom");
+              onEditConsumed();
+            }}
+          >
+            <Icon name="grip" />
+            Crear para mí
+          </button>
+          <button onClick={onOpenLibrary}>
+            <Icon name="bookmark" />
+            Mis maratones <b>{marathons.length}</b>
+          </button>
+        </div>
+        {plannerMode === "auto" ? (
+          <>
+            <section className="planner-config">
+              <label>
+                <span>Objetivo final</span>
+                <select
+                  value={targetId}
+                  onChange={(event) => setTargetId(event.target.value)}
+                >
+                  {ITEMS.filter(
+                    (item) =>
+                      item.upcoming ||
+                      ["no-way-home", "deadpool-wolverine", "endgame"].includes(
+                        item.id,
+                      ),
+                  )
+                    .sort((a, b) => a.releaseValue - b.releaseValue)
+                    .map((item) => (
+                      <option value={item.id} key={item.id}>
+                        {item.title}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                <span>Recorrido</span>
+                <select
+                  value={trackId}
+                  onChange={(event) => setTrackId(event.target.value)}
+                >
+                  <option value="route">Requisitos del objetivo</option>
+                  {TRACKS.map((track) => (
+                    <option key={track.id} value={track.id}>
+                      {track.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Horas libres por día</span>
+                <input
+                  type="number"
+                  min="0.5"
+                  max="12"
+                  step="0.5"
+                  value={hours}
+                  onChange={(event) => setHours(Number(event.target.value))}
+                />
+              </label>
+              <label>
+                <span>Comenzar</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                />
+              </label>
+              <div className="day-selector">
+                <span>Días disponibles</span>
+                <div>
+                  {DAY_LABELS.map((label, index) => (
+                    <button
+                      key={label}
+                      className={days.has(index) ? "active" : ""}
+                      onClick={() =>
+                        setDays((current) => {
+                          const next = new Set(current);
+                          if (next.has(index)) next.delete(index);
+                          else next.add(index);
+                          return next;
+                        })
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button
+                className={`context-toggle ${includeContext ? "active" : ""}`}
+                onClick={() => setIncludeContext((value) => !value)}
+              >
+                <Icon name="spark" />
+                <span>
+                  <strong>Contexto ampliado</strong>
+                  <small>
+                    {includeContext
+                      ? "Incluye referencias y variantes"
+                      : "Solo requisitos esenciales"}
+                  </small>
+                </span>
+              </button>
+              <button className="generate-plan" onClick={() => buildPlan()}>
+                <Icon name="calendar" />
+                Generar calendario
+              </button>
+            </section>
+            {plan.length > 0 && (
+              <>
+                <section className="plan-summary">
+                  <div>
+                    <strong>{formatMinutes(totalMinutes)}</strong>
+                    <small>contenido pendiente</small>
+                  </div>
+                  <div>
+                    <strong>{groups.length}</strong>
+                    <small>días de maratón</small>
+                  </div>
+                  <div>
+                    <strong>
+                      {completed}/{plan.length}
+                    </strong>
+                    <small>sesiones completadas</small>
+                  </div>
+                  <div>
+                    <strong>{finishDate ? formatDate(finishDate) : "—"}</strong>
+                    <small>fecha de finalización</small>
+                  </div>
+                  <button onClick={reorganize}>
+                    <Icon name="shuffle" />
+                    Reorganizar días perdidos
+                  </button>
+                </section>
+                <div className="marathon-days">
+                  {groups.map((date, dayIndex) => {
+                    const tasks = plan.filter((task) => task.date === date);
+                    const isToday = date === isoDate(new Date());
+                    return (
+                      <section
+                        key={date}
+                        className={`marathon-day${isToday ? " today" : ""}`}
+                      >
+                        <header>
+                          <span className="day-index">
+                            {String(dayIndex + 1).padStart(2, "0")}
+                          </span>
+                          <span>
+                            <strong>
+                              {dateAtNoon(date).toLocaleDateString("es-PE", {
+                                weekday: "long",
+                                day: "numeric",
+                                month: "long",
+                              })}
+                            </strong>
+                            <small>
+                              {formatMinutes(
+                                tasks.reduce(
+                                  (sum, task) => sum + task.minutes,
+                                  0,
+                                ),
+                              )}
+                              {isToday ? " · Hoy" : ""}
+                            </small>
+                          </span>
+                          <b>
+                            {tasks.filter((task) => task.done).length}/
+                            {tasks.length}
+                          </b>
+                        </header>
+                        <div>
+                          {tasks.map((task) => {
+                            const item = ITEM_BY_ID.get(task.itemId)!;
+                            return (
+                              <article
+                                className={`${task.done ? "done " : ""}media-${item.type}`}
+                                style={mediaStyle(item)}
+                                key={task.key}
+                              >
+                                <button
+                                  className="task-check"
+                                  onClick={() => {
+                                    if (task.episode)
+                                      onToggleEpisode(item, task.episode);
+                                    else onToggleWatched(item);
+                                    setPlan((current) =>
+                                      current.map((entry) =>
+                                        entry.key === task.key
+                                          ? { ...entry, done: !entry.done }
+                                          : entry,
+                                      ),
+                                    );
+                                  }}
+                                >
+                                  <Icon name="check" />
+                                </button>
+                                <button
+                                  className="task-art"
+                                  onClick={() => onOpenDetail(item)}
+                                >
+                                  <img
+                                    src={artworkFor(item, "card")}
+                                    alt={`Fotograma de ${item.title}`}
+                                    loading="lazy"
+                                  />
+                                  <span>{TYPE_LABEL[item.type]}</span>
+                                </button>
+                                <button
+                                  className="task-copy"
+                                  onClick={() => onOpenDetail(item)}
+                                >
+                                  <small>
+                                    <i />
+                                    {trackForId(item.trackId)?.short} ·{" "}
+                                    {task.minutes} min
+                                  </small>
+                                  <strong>{item.title}</strong>
+                                  <span>
+                                    {task.episode
+                                      ? `Capítulo ${task.episode}`
+                                      : task.done
+                                        ? "Completada"
+                                        : "Pendiente"}
+                                  </span>
+                                </button>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <CustomMarathonBuilder
+            author={author}
+            saved={marathons}
+            editingMarathonId={editingMarathonId}
+            onSaved={onMarathons}
+            onEditConsumed={onEditConsumed}
+            onOpenLibrary={onOpenLibrary}
+            onOpenSequence={onOpenSequence}
+            onOpenDetail={onOpenDetail}
+            notify={notify}
+          />
+        )}
+      </div>
+    </section>
+  );
 }
 
-function CustomMarathonBuilder({ author, onOpenDetail, notify }: { author:string; onOpenDetail:(item:MapItem)=>void; notify:(message:string)=>void }) {
-  const [saved, setSaved] = useState<SharedMarathon[]>(()=>{ try { return JSON.parse(localStorage.getItem(CUSTOM_MARATHONS_KEY)||"[]"); } catch { return []; } });
-  const [name,setName]=useState("Mi maratón Marvel"); const [description,setDescription]=useState(""); const [search,setSearch]=useState("");
-  const [marathonCode,setMarathonCode]=useState("");
-  const [tasks,setTasks]=useState<Array<{itemId:string;episode?:number}>>([]); const [episodeChoice,setEpisodeChoice]=useState<Record<string,number>>({}); const [dragged,setDragged]=useState<number|null>(null);
-  useEffect(()=>{localStorage.setItem(CUSTOM_MARATHONS_KEY,JSON.stringify(saved));window.dispatchEvent(new CustomEvent("nexus:local-change",{detail:{kind:"marathons"}}));},[saved]);
-  const results=useMemo(()=>search.trim().length>1?ITEMS.filter((item)=>!item.upcoming&&normalize([item.title,item.saga,trackForId(item.trackId)?.short].filter(Boolean).join(" ")).includes(normalize(search))).slice(0,8):[],[search]);
-  const durationOf=(task:{itemId:string;episode?:number})=>{ const item=ITEM_BY_ID.get(task.itemId)!; return task.episode ? TITLE_METADATA[item.id]?.episodeDurations?.[task.episode-1]||TITLE_METADATA[item.id]?.episodeRuntimeMinutes||EPISODE_RUNTIME_OVERRIDES[item.id]||24 : TITLE_METADATA[item.id]?.runtimeMinutes||RUNTIME_OVERRIDES[item.id]||120; };
-  const totalMinutes=tasks.reduce((sum,task)=>sum+durationOf(task),0);
-  const add=(item:MapItem,episode?:number)=>{ const key=`${item.id}-${episode||"full"}`; if(tasks.some((task)=>`${task.itemId}-${task.episode||"full"}`===key)){notify("Ese contenido ya está en el maratón");return;} setTasks((current)=>[...current,{itemId:item.id,...(episode?{episode}:{})}]); };
-  const addSeries=(item:MapItem)=>{ const total=EPISODE_COUNTS[item.id]||0; if(!total)return add(item); const existing=new Set(tasks.filter((task)=>task.itemId===item.id).map((task)=>task.episode)); setTasks((current)=>[...current,...Array.from({length:total},(_,index)=>index+1).filter((episode)=>!existing.has(episode)).map((episode)=>({itemId:item.id,episode}))]); };
-  const move=(from:number,to:number)=>{ if(to<0||to>=tasks.length)return; setTasks((current)=>{const next=[...current];const [entry]=next.splice(from,1);next.splice(to,0,entry);return next;}); };
-  const payload=():SharedMarathon=>({version:1,id:`marathon-${Date.now()}`,name:name.trim()||"Maratón sin nombre",description:description.trim(),createdAt:new Date().toISOString(),author,tasks,coverIds:[...new Set(tasks.map((task)=>task.itemId))].slice(0,4)});
-  const save=()=>{ if(!tasks.length){notify("Añade al menos un título");return;} const marathon=payload(); setSaved((current)=>[marathon,...current.filter((entry)=>entry.name!==marathon.name)]);notify("Maratón guardado"); };
-  const copyCode=async()=>{if(!tasks.length){notify("Añade contenido antes de crear el código");return;}try{const code=encodeMarathonCode(payload());setMarathonCode(code);localStorage.setItem("nexus-achievement-marathon-code-v1","true");window.dispatchEvent(new CustomEvent("nexus:local-change",{detail:{kind:"achievement"}}));await navigator.clipboard?.writeText(code);notify("Código Nexus copiado");}catch(error){notify(error instanceof Error?error.message:"No se pudo crear el código");}};
-  const importCode=()=>{try{const decoded=decodeMarathonCode(marathonCode,new Set(ITEMS.map((item)=>item.id)));for(const task of decoded.tasks){if(task.episode&&task.episode>(EPISODE_COUNTS[task.itemId]||0))throw new Error(`El capítulo ${task.episode} no existe en ${ITEM_BY_ID.get(task.itemId)?.title||task.itemId}.`);}const imported:SharedMarathon={version:1,id:`imported-${Date.now()}`,name:decoded.name,description:decoded.description,createdAt:new Date().toISOString(),author:"Código Nexus",tasks:decoded.tasks,coverIds:[...new Set(decoded.tasks.map((task)=>task.itemId))].slice(0,4)};setSaved((current)=>[imported,...current]);setName(imported.name);setDescription(imported.description);setTasks(imported.tasks);localStorage.setItem("nexus-achievement-marathon-code-v1","true");window.dispatchEvent(new CustomEvent("nexus:local-change",{detail:{kind:"achievement"}}));notify(`Importado: ${imported.name}`);}catch(error){notify(error instanceof Error?error.message:"Código de maratón inválido");}};
-  const load=(marathon:SharedMarathon)=>{setName(marathon.name);setDescription(marathon.description);setTasks(marathon.tasks);notify("Maratón abierto en el editor");};
-  return <section className="custom-marathon"><header className="custom-marathon-intro"><div><span className="dash-eyebrow">Constructor visual</span><h2>Crea una ruta para tu grupo</h2><p>Elige películas o capítulos, ordénalos y compártelos como un código Nexus que no contiene datos personales.</p></div><div><button className="share-marathon" onClick={copyCode}><Icon name="share"/>Copiar código</button></div></header><section className="marathon-code-panel"><div><span className="dash-eyebrow">CÓDIGO PORTABLE NXS1</span><strong>Comparte el maratón sin archivos ni enlaces</strong><small>El código conserva nombre, títulos, capítulos y orden.</small></div><textarea value={marathonCode} onChange={(event)=>setMarathonCode(event.target.value)} placeholder="Pega aquí un código NXS1…" spellCheck={false}/><button onClick={importCode} disabled={!marathonCode.trim()}><Icon name="upload"/>Importar código</button></section><div className="builder-grid"><aside className="builder-catalog"><label><Icon name="search"/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Buscar títulos o universos…"/></label>{results.length?<div className="builder-results">{results.map((item)=>{const total=EPISODE_COUNTS[item.id]||0;const episode=episodeChoice[item.id]||1;return <article key={item.id} style={mediaStyle(item)}><img src={posterFor(item,"thumb")} alt=""/><div><small>{TYPE_LABEL[item.type]} · {trackForId(item.trackId)?.short}</small><strong>{item.title}</strong>{total?<span><select value={episode} onChange={(event)=>setEpisodeChoice((current)=>({...current,[item.id]:Number(event.target.value)}))}>{Array.from({length:total},(_,index)=><option value={index+1} key={index}>Capítulo {index+1}</option>)}</select><button onClick={()=>add(item,episode)}>+ capítulo</button><button onClick={()=>addSeries(item)}>Serie completa</button></span>:<button onClick={()=>add(item)}>Añadir película</button>}</div></article>})}</div>:<div className="builder-search-empty"><Icon name="search"/><p>{search?"No encontramos coincidencias":"Busca para comenzar tu selección"}</p></div>}</aside><main className="builder-editor"><div className="builder-fields"><label><span>Nombre</span><input value={name} onChange={(event)=>setName(event.target.value)} maxLength={70}/></label><label><span>Descripción</span><input value={description} onChange={(event)=>setDescription(event.target.value)} placeholder="Plan, ocasión o instrucciones para tus amigos" maxLength={160}/></label></div><div className="builder-summary"><div className="marathon-cover">{[...new Set(tasks.map((task)=>task.itemId))].slice(0,4).map((id)=><img src={posterFor(ITEM_BY_ID.get(id)!,"card")} alt="" key={id}/>)}{!tasks.length&&<Icon name="film" size={34}/>}</div><span><strong>{tasks.length} sesiones</strong><small>{formatMinutes(totalMinutes)} · {new Set(tasks.map((task)=>task.itemId)).size} títulos</small></span><button onClick={save}><Icon name="bookmark"/>Guardar</button></div>{tasks.length?<div className="builder-timeline">{tasks.map((task,index)=>{const item=ITEM_BY_ID.get(task.itemId)!;return <article key={`${task.itemId}-${task.episode||0}-${index}`} draggable onDragStart={()=>setDragged(index)} onDragOver={(event)=>event.preventDefault()} onDrop={()=>{if(dragged!==null)move(dragged,index);setDragged(null);}} style={mediaStyle(item)}><span className="drag-handle"><Icon name="grip"/></span><b>{String(index+1).padStart(2,"0")}</b><img src={artworkFor(item,"card")} alt=""/><button onClick={()=>onOpenDetail(item)}><small>{TYPE_LABEL[item.type]} · {durationOf(task)} min</small><strong>{item.title}</strong><span>{task.episode?`Capítulo ${task.episode}`:"Película completa"}</span></button><div><button disabled={index===0} onClick={()=>move(index,index-1)} aria-label="Subir">↑</button><button disabled={index===tasks.length-1} onClick={()=>move(index,index+1)} aria-label="Bajar">↓</button><button onClick={()=>setTasks((current)=>current.filter((_entry,currentIndex)=>currentIndex!==index))} aria-label="Quitar"><Icon name="close"/></button></div></article>})}</div>:<div className="builder-drop-empty"><Icon name="grip" size={32}/><h3>Tu maratón está vacío</h3><p>Busca contenido en la columna izquierda y añádelo aquí.</p></div>}</main></div>{saved.length>0&&<section className="saved-marathons"><div className="dashboard-section-head"><div><span className="dash-eyebrow">Plantillas locales</span><h2>Tus maratones</h2></div><small>{saved.length} guardados</small></div><div>{saved.map((marathon)=><article key={marathon.id}><div className="saved-cover">{marathon.coverIds.slice(0,4).map((id)=>ITEM_BY_ID.get(id)&&<img key={id} src={posterFor(ITEM_BY_ID.get(id)!,"thumb")} alt=""/>)}</div><span><strong>{marathon.name}</strong><small>{marathon.tasks.length} sesiones · {marathon.author}</small></span><button onClick={()=>load(marathon)}>Editar</button><button onClick={()=>setSaved((current)=>current.filter((entry)=>entry.id!==marathon.id))}><Icon name="close"/></button></article>)}</div></section>}</section>;
+function CustomMarathonBuilder({
+  author,
+  saved,
+  editingMarathonId,
+  onSaved,
+  onEditConsumed,
+  onOpenLibrary,
+  onOpenSequence,
+  onOpenDetail,
+  notify,
+}: {
+  author: string;
+  saved: SharedMarathon[];
+  editingMarathonId: string | null;
+  onSaved: React.Dispatch<React.SetStateAction<SharedMarathon[]>>;
+  onEditConsumed: () => void;
+  onOpenLibrary: () => void;
+  onOpenSequence: (data: SequenceMapData) => void;
+  onOpenDetail: (item: MapItem) => void;
+  notify: (message: string) => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState("Mi maratón Marvel");
+  const [description, setDescription] = useState("");
+  const [search, setSearch] = useState("");
+  const [marathonCode, setMarathonCode] = useState("");
+  const [tasks, setTasks] = useState<
+    Array<{ itemId: string; episode?: number }>
+  >([]);
+  const [episodeChoice, setEpisodeChoice] = useState<Record<string, number>>(
+    {},
+  );
+  const [dragged, setDragged] = useState<number | null>(null);
+  const resetDraft = () => {
+    setEditingId(null);
+    setName("Mi maratón Marvel");
+    setDescription("");
+    setTasks([]);
+    setMarathonCode("");
+    setSearch("");
+    onEditConsumed();
+  };
+  useEffect(() => {
+    if (!editingMarathonId) return;
+    const marathon = saved.find((entry) => entry.id === editingMarathonId);
+    if (!marathon) return;
+    setEditingId(marathon.id);
+    setName(marathon.name);
+    setDescription(marathon.description);
+    setTasks(marathon.tasks);
+    setMarathonCode("");
+    onEditConsumed();
+  }, [editingMarathonId, onEditConsumed, saved]);
+  const results = useMemo(
+    () =>
+      search.trim().length > 1
+        ? ITEMS.filter(
+            (item) =>
+              !item.upcoming &&
+              normalize(
+                [item.title, item.saga, trackForId(item.trackId)?.short]
+                  .filter(Boolean)
+                  .join(" "),
+              ).includes(normalize(search)),
+          ).slice(0, 8)
+        : [],
+    [search],
+  );
+  const durationOf = (task: { itemId: string; episode?: number }) => {
+    const item = ITEM_BY_ID.get(task.itemId)!;
+    return task.episode
+      ? TITLE_METADATA[item.id]?.episodeDurations?.[task.episode - 1] ||
+          TITLE_METADATA[item.id]?.episodeRuntimeMinutes ||
+          EPISODE_RUNTIME_OVERRIDES[item.id] ||
+          24
+      : TITLE_METADATA[item.id]?.runtimeMinutes ||
+          RUNTIME_OVERRIDES[item.id] ||
+          120;
+  };
+  const totalMinutes = tasks.reduce((sum, task) => sum + durationOf(task), 0);
+  const add = (item: MapItem, episode?: number) => {
+    const key = `${item.id}-${episode || "full"}`;
+    if (
+      tasks.some((task) => `${task.itemId}-${task.episode || "full"}` === key)
+    ) {
+      notify("Ese contenido ya está en el maratón");
+      return;
+    }
+    setTasks((current) => [
+      ...current,
+      { itemId: item.id, ...(episode ? { episode } : {}) },
+    ]);
+  };
+  const addSeries = (item: MapItem) => {
+    const total = EPISODE_COUNTS[item.id] || 0;
+    if (!total) return add(item);
+    const existing = new Set(
+      tasks
+        .filter((task) => task.itemId === item.id)
+        .map((task) => task.episode),
+    );
+    setTasks((current) => [
+      ...current,
+      ...Array.from({ length: total }, (_, index) => index + 1)
+        .filter((episode) => !existing.has(episode))
+        .map((episode) => ({ itemId: item.id, episode })),
+    ]);
+  };
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= tasks.length) return;
+    setTasks((current) => {
+      const next = [...current];
+      const [entry] = next.splice(from, 1);
+      next.splice(to, 0, entry);
+      return next;
+    });
+  };
+  const payload = (): SharedMarathon => {
+    const existing = saved.find((entry) => entry.id === editingId);
+    return {
+      version: 1,
+      id: existing?.id || `marathon-${crypto.randomUUID?.() || Date.now()}`,
+      name: name.trim() || "Maratón sin nombre",
+      description: description.trim(),
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      author: existing?.author || author,
+      tasks,
+      coverIds: [...new Set(tasks.map((task) => task.itemId))].slice(0, 4),
+    };
+  };
+  const save = () => {
+    if (!tasks.length) {
+      notify("Añade al menos un título");
+      return;
+    }
+    const marathon = payload();
+    onSaved((current) => [
+      marathon,
+      ...current.filter((entry) => entry.id !== marathon.id),
+    ]);
+    setEditingId(marathon.id);
+    notify(
+      editingId
+        ? "Cambios guardados y sincronizando"
+        : "Maratón guardado en tu biblioteca",
+    );
+  };
+  const copyCode = async () => {
+    if (!tasks.length) {
+      notify("Añade contenido antes de crear el código");
+      return;
+    }
+    try {
+      const code = encodeMarathonCode(payload());
+      setMarathonCode(code);
+      localStorage.setItem("nexus-achievement-marathon-code-v1", "true");
+      window.dispatchEvent(
+        new CustomEvent("nexus:local-change", {
+          detail: { kind: "achievement" },
+        }),
+      );
+      await navigator.clipboard?.writeText(code);
+      notify("Código Nexus copiado");
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "No se pudo crear el código",
+      );
+    }
+  };
+  const importCode = () => {
+    try {
+      const decoded = decodeMarathonCode(
+        marathonCode,
+        new Set(ITEMS.map((item) => item.id)),
+      );
+      for (const task of decoded.tasks) {
+        if (task.episode && task.episode > (EPISODE_COUNTS[task.itemId] || 0))
+          throw new Error(
+            `El capítulo ${task.episode} no existe en ${ITEM_BY_ID.get(task.itemId)?.title || task.itemId}.`,
+          );
+      }
+      const imported: SharedMarathon = {
+        version: 1,
+        id: `imported-${crypto.randomUUID?.() || Date.now()}`,
+        name: decoded.name,
+        description: decoded.description,
+        createdAt: new Date().toISOString(),
+        author: "Código Nexus",
+        tasks: decoded.tasks,
+        coverIds: [...new Set(decoded.tasks.map((task) => task.itemId))].slice(
+          0,
+          4,
+        ),
+      };
+      onSaved((current) => [imported, ...current]);
+      setEditingId(imported.id);
+      setName(imported.name);
+      setDescription(imported.description);
+      setTasks(imported.tasks);
+      localStorage.setItem("nexus-achievement-marathon-code-v1", "true");
+      window.dispatchEvent(
+        new CustomEvent("nexus:local-change", {
+          detail: { kind: "achievement" },
+        }),
+      );
+      notify(`Importado y guardado: ${imported.name}`);
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Código de maratón inválido",
+      );
+    }
+  };
+  const load = (marathon: SharedMarathon) => {
+    setEditingId(marathon.id);
+    setName(marathon.name);
+    setDescription(marathon.description);
+    setTasks(marathon.tasks);
+    setMarathonCode("");
+    notify("Maratón abierto en el editor");
+  };
+  return (
+    <section className="custom-marathon">
+      <header className="custom-marathon-intro">
+        <div>
+          <span className="dash-eyebrow">
+            {editingId ? "Editando tu maratón" : "Constructor personal"}
+          </span>
+          <h2>{editingId ? name : "Crea un maratón para ti"}</h2>
+          <p>
+            Guárdalo en Biblioteca, continúa cuando quieras y compártelo solo
+            si tú decides.
+          </p>
+        </div>
+        <div>
+          <button onClick={resetDraft}>
+            <Icon name="plus" />
+            Nuevo maratón
+          </button>
+          <button onClick={onOpenLibrary}>
+            <Icon name="bookmark" />
+            Abrir biblioteca
+          </button>
+          <button
+            className="share-marathon"
+            onClick={copyCode}
+            disabled={!tasks.length}
+          >
+            <Icon name="share" />
+            Compartir código
+          </button>
+        </div>
+      </header>
+      <section className="marathon-code-panel">
+        <div>
+          <span className="dash-eyebrow">IMPORTAR DE UN AMIGO</span>
+          <strong>El código NXS1 conserva títulos, capítulos y orden</strong>
+          <small>Se guardará automáticamente en tu Biblioteca.</small>
+        </div>
+        <textarea
+          value={marathonCode}
+          onChange={(event) => setMarathonCode(event.target.value)}
+          placeholder="Pega aquí un código NXS1…"
+          spellCheck={false}
+        />
+        <button onClick={importCode} disabled={!marathonCode.trim()}>
+          <Icon name="upload" />
+          Importar y guardar
+        </button>
+      </section>
+      <div className="builder-grid">
+        <aside className="builder-catalog">
+          <label>
+            <Icon name="search" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar títulos o universos…"
+            />
+          </label>
+          {results.length ? (
+            <div className="builder-results">
+              {results.map((item) => {
+                const total = EPISODE_COUNTS[item.id] || 0;
+                const episode = episodeChoice[item.id] || 1;
+                return (
+                  <article key={item.id} style={mediaStyle(item)}>
+                    <img src={posterFor(item, "thumb")} alt="" />
+                    <div>
+                      <small>
+                        {TYPE_LABEL[item.type]} ·{" "}
+                        {trackForId(item.trackId)?.short}
+                      </small>
+                      <strong>{item.title}</strong>
+                      {total ? (
+                        <span>
+                          <select
+                            value={episode}
+                            onChange={(event) =>
+                              setEpisodeChoice((current) => ({
+                                ...current,
+                                [item.id]: Number(event.target.value),
+                              }))
+                            }
+                          >
+                            {Array.from({ length: total }, (_, index) => (
+                              <option value={index + 1} key={index}>
+                                Capítulo {index + 1}
+                              </option>
+                            ))}
+                          </select>
+                          <button onClick={() => add(item, episode)}>
+                            + capítulo
+                          </button>
+                          <button onClick={() => addSeries(item)}>
+                            Serie completa
+                          </button>
+                        </span>
+                      ) : (
+                        <button onClick={() => add(item)}>
+                          Añadir película
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="builder-search-empty">
+              <Icon name="search" />
+              <p>
+                {search
+                  ? "No encontramos coincidencias"
+                  : "Busca para comenzar tu selección"}
+              </p>
+            </div>
+          )}
+        </aside>
+        <main className="builder-editor">
+          <div className="builder-fields">
+            <label>
+              <span>Nombre</span>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={70}
+              />
+            </label>
+            <label>
+              <span>Descripción</span>
+              <input
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Plan, ocasión o instrucciones para tus amigos"
+                maxLength={160}
+              />
+            </label>
+          </div>
+          <div className="builder-summary">
+            <div className="marathon-cover">
+              {[...new Set(tasks.map((task) => task.itemId))]
+                .slice(0, 4)
+                .map((id) => (
+                  <img
+                    src={posterFor(ITEM_BY_ID.get(id)!, "card")}
+                    alt=""
+                    key={id}
+                  />
+                ))}
+              {!tasks.length && <Icon name="film" size={34} />}
+            </div>
+            <span>
+              <strong>{tasks.length} sesiones</strong>
+              <small>
+                {formatMinutes(totalMinutes)} ·{" "}
+                {new Set(tasks.map((task) => task.itemId)).size} títulos
+              </small>
+            </span>
+            <button className="builder-save-primary" onClick={save}>
+              <Icon name="bookmark" />
+              {editingId ? "Guardar cambios" : "Guardar en Biblioteca"}
+            </button>
+          </div>
+          {tasks.length ? (
+            <div className="builder-timeline">
+              {tasks.map((task, index) => {
+                const item = ITEM_BY_ID.get(task.itemId)!;
+                return (
+                  <article
+                    key={`${task.itemId}-${task.episode || 0}-${index}`}
+                    draggable
+                    onDragStart={() => setDragged(index)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => {
+                      if (dragged !== null) move(dragged, index);
+                      setDragged(null);
+                    }}
+                    style={mediaStyle(item)}
+                  >
+                    <span className="drag-handle">
+                      <Icon name="grip" />
+                    </span>
+                    <b>{String(index + 1).padStart(2, "0")}</b>
+                    <img src={artworkFor(item, "card")} alt="" />
+                    <button onClick={() => onOpenDetail(item)}>
+                      <small>
+                        {TYPE_LABEL[item.type]} · {durationOf(task)} min
+                      </small>
+                      <strong>{item.title}</strong>
+                      <span>
+                        {task.episode
+                          ? `Capítulo ${task.episode}`
+                          : "Película completa"}
+                      </span>
+                    </button>
+                    <div>
+                      <button
+                        disabled={index === 0}
+                        onClick={() => move(index, index - 1)}
+                        aria-label="Subir"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        disabled={index === tasks.length - 1}
+                        onClick={() => move(index, index + 1)}
+                        aria-label="Bajar"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={() =>
+                          setTasks((current) =>
+                            current.filter(
+                              (_entry, currentIndex) => currentIndex !== index,
+                            ),
+                          )
+                        }
+                        aria-label="Quitar"
+                      >
+                        <Icon name="close" />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="builder-drop-empty">
+              <Icon name="grip" size={32} />
+              <h3>Tu maratón está vacío</h3>
+              <p>Busca contenido en la columna izquierda y añádelo aquí.</p>
+            </div>
+          )}
+        </main>
+      </div>
+      {tasks.length > 0 && (
+        <div className="builder-save-bar">
+          <span>
+            <small>{editingId ? "Cambios pendientes" : "Tu nuevo maratón"}</small>
+            <strong>{tasks.length} sesiones · {formatMinutes(totalMinutes)}</strong>
+          </span>
+          <button
+            onClick={() =>
+              onOpenSequence({
+                id: editingId || "marathon-draft",
+                title: name.trim() || "Maratón sin nombre",
+                subtitle: `${tasks.length} sesiones · ${formatMinutes(totalMinutes)}`,
+                tasks,
+                kind: "marathon",
+              })
+            }
+          >
+            <Icon name="route" />
+            Vista previa
+          </button>
+          <button className="primary" onClick={save}>
+            <Icon name="bookmark" />
+            {editingId ? "Guardar cambios" : "Guardar en mi Biblioteca"}
+          </button>
+        </div>
+      )}
+      {saved.length > 0 && (
+        <section className="saved-marathons">
+          <div className="dashboard-section-head">
+            <div>
+              <span className="dash-eyebrow">Acceso rápido</span>
+              <h2>Guardados recientemente</h2>
+            </div>
+            <button onClick={onOpenLibrary}>Ver todos en Biblioteca</button>
+          </div>
+          <div>
+            {saved.slice(0, 3).map((marathon) => (
+              <article key={marathon.id}>
+                <div className="saved-cover">
+                  {marathon.coverIds
+                    .slice(0, 4)
+                    .map(
+                      (id) =>
+                        ITEM_BY_ID.get(id) && (
+                          <img
+                            key={id}
+                            src={posterFor(ITEM_BY_ID.get(id)!, "thumb")}
+                            alt=""
+                          />
+                        ),
+                    )}
+                </div>
+                <span>
+                  <strong>{marathon.name}</strong>
+                  <small>
+                    {marathon.tasks.length} sesiones · {marathon.author}
+                  </small>
+                </span>
+                <button onClick={() => load(marathon)}>Editar</button>
+                <button
+                  aria-label={`Ver mapa de ${marathon.name}`}
+                  onClick={() =>
+                    onOpenSequence({
+                      id: marathon.id,
+                      title: marathon.name,
+                      subtitle: `${marathon.tasks.length} sesiones · ${marathon.author}`,
+                      tasks: marathon.tasks,
+                      kind: "marathon",
+                    })
+                  }
+                >
+                  <Icon name="route" />
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </section>
+  );
 }
 
 function MarvelCalendar({ onOpenDetail, notify }: { onOpenDetail: (item: MapItem) => void; notify: (message: string) => void }) {
@@ -1659,7 +2603,7 @@ function achievementGroup(id:string) {
 
 function achievementVisual(achievement:Achievement) {
   const item=ITEM_BY_ID.get(achievement.coverId||achievement.requiredIds[0]||"");
-  return {item,thumb:item?artworkFor(item,"card"):"./artwork/cosmic-hero-v1.webp",hero:item?artworkFor(item,"hero"):"./artwork/cosmic-hero-v1.webp"};
+  return {item,...achievementArtFor(achievement.id,achievementGroup(achievement.id),item?.id)};
 }
 
 function AchievementsView({achievements,watched,onOpenRoute}:{achievements:Achievement[];watched:Set<string>;onOpenRoute:(achievement:Achievement)=>void}) {
@@ -1724,7 +2668,7 @@ function AchievementDetail({achievement,watched,spoilerSafe=false,onClose,onOpen
   useEffect(()=>{const close=(event:KeyboardEvent)=>{if(event.key==="Escape")onClose();};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[onClose]);
   return <div className="achievement-detail-layer" role="dialog" aria-modal="true" aria-label={`Logro ${achievement.title}`} onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose();}}>
     <section className="achievement-detail" data-tier={achievement.tier.toLowerCase()}>
-      <div className="achievement-detail-art" style={{backgroundImage:`linear-gradient(90deg,rgba(8,10,14,.18),rgba(8,10,14,.78)),url(${visual.hero})`}}><span><Icon name={achievement.icon} size={30}/></span><button onClick={onClose} aria-label="Cerrar"><Icon name="close"/></button></div>
+      <div className="achievement-detail-art" style={{backgroundImage:`linear-gradient(90deg,rgba(8,10,14,.18),rgba(8,10,14,.78)),url(${visual.hero})`}}><span><Icon name={achievement.icon} size={30}/></span><a href={visual.source.startsWith("http")?visual.source:undefined} target="_blank" rel="noreferrer">Arte panorámico verificado</a><button onClick={onClose} aria-label="Cerrar"><Icon name="close"/></button></div>
       <header><span><Icon name={achievement.icon} size={30}/></span><div><small>{achievementGroup(achievement.id)} · {achievement.tier}</small><h2>{achievement.title}</h2><p>{achievement.description}</p></div></header>
       <div className="achievement-detail-progress"><span><strong>{Math.round(achievement.progress*100)}%</strong><small>{achievement.current}/{achievement.goal} requisitos</small></span><i><b style={{width:`${achievement.progress*100}%`}}/></i>{achievement.unlockedAt&&<p>Obtenido el {new Intl.DateTimeFormat("es-PE",{dateStyle:"long"}).format(new Date(achievement.unlockedAt))}</p>}<p>Rareza global: se calculará con perfiles públicos cuando la comunidad esté activa.</p></div>
       {required.length>0?<div className="achievement-requirements"><div className="achievement-requirement-heading"><h3>Títulos necesarios</h3>{spoilerSafe&&!revealRequirements&&<button onClick={()=>setRevealRequirements(true)}><Icon name="eye"/>Revelar pendientes</button>}</div>{required.map((item)=>{const hidden=spoilerSafe&&!revealRequirements&&!watched.has(item.id);return <article key={item.id} className={`${watched.has(item.id)?"complete":"pending"} ${hidden?"spoiler-hidden":""}`}><img src={hidden?visual.thumb:posterFor(item,"thumb")} alt="" loading="lazy"/><span><small>{watched.has(item.id)?"Completado":hidden?"Requisito protegido":"Pendiente"}</small><strong>{hidden?"Título oculto":item.title}</strong><p>{hidden?"Completa la ruta para revelarlo":`${item.date} · ${trackForId(item.trackId)?.short}`}</p></span>{watched.has(item.id)?<Icon name="check"/>:<Icon name="clock"/>}</article>})}</div>:<p className="achievement-general-note">Este logro avanza con tu actividad general y no necesita una lista concreta de títulos.</p>}
@@ -1733,30 +2677,415 @@ function AchievementDetail({achievement,watched,spoilerSafe=false,onClose,onOpen
   </div>;
 }
 
-function ListView({ watchlist, ignored, favorites, ratings, customLists, watched, episodes, onToggleWatchlist, onToggleFavorite, onLists, onRestore, onOpenDetail, onOpenMap, onBrowseMap, onBrowseRecommendations }: { watchlist: Set<string>; ignored: Set<string>; favorites: Set<string>; ratings: Record<string, number>; customLists: CustomList[]; watched: Set<string>; episodes: EpisodeState; onToggleWatchlist: (item: MapItem) => void; onToggleFavorite: (item: MapItem) => void; onLists: React.Dispatch<React.SetStateAction<CustomList[]>>; onRestore: (item: MapItem) => void; onOpenDetail: (item: MapItem) => void; onOpenMap: (item: MapItem) => void; onBrowseMap:()=>void; onBrowseRecommendations:()=>void }) {
-  const [tab, setTab] = useState<"saved" | "favorites" | "ignored" | "lists">("saved");
+function marathonTaskMinutes(task: SharedMarathon["tasks"][number]) {
+  const item=ITEM_BY_ID.get(task.itemId);
+  if(!item)return 0;
+  return task.episode ? TITLE_METADATA[item.id]?.episodeDurations?.[task.episode-1]||TITLE_METADATA[item.id]?.episodeRuntimeMinutes||EPISODE_RUNTIME_OVERRIDES[item.id]||24 : TITLE_METADATA[item.id]?.runtimeMinutes||RUNTIME_OVERRIDES[item.id]||120;
+}
+
+function marathonTaskDone(task: SharedMarathon["tasks"][number], watched:Set<string>, episodes:EpisodeState) {
+  return task.episode ? (episodes[task.itemId]||[]).includes(task.episode) : watched.has(task.itemId);
+}
+
+function ListView({
+  initialTab,
+  watchlist,
+  ignored,
+  favorites,
+  ratings,
+  customLists,
+  marathons,
+  watched,
+  episodes,
+  onToggleWatchlist,
+  onToggleFavorite,
+  onLists,
+  onMarathons,
+  onRestore,
+  onOpenDetail,
+  onOpenMap,
+  onBrowseMap,
+  onBrowseRecommendations,
+  onCreateMarathon,
+  onEditMarathon,
+  onOpenSequence,
+  notify,
+}: {
+  initialTab:"saved"|"marathons";
+  watchlist: Set<string>;
+  ignored: Set<string>;
+  favorites: Set<string>;
+  ratings: Record<string, number>;
+  customLists: CustomList[];
+  marathons: SharedMarathon[];
+  watched: Set<string>;
+  episodes: EpisodeState;
+  onToggleWatchlist: (item: MapItem) => void;
+  onToggleFavorite: (item: MapItem) => void;
+  onLists: React.Dispatch<React.SetStateAction<CustomList[]>>;
+  onMarathons: React.Dispatch<React.SetStateAction<SharedMarathon[]>>;
+  onRestore: (item: MapItem) => void;
+  onOpenDetail: (item: MapItem) => void;
+  onOpenMap: (item: MapItem) => void;
+  onBrowseMap: () => void;
+  onBrowseRecommendations: () => void;
+  onCreateMarathon:()=>void;
+  onEditMarathon:(id:string)=>void;
+  onOpenSequence:(data:SequenceMapData)=>void;
+  notify:(message:string)=>void;
+}) {
+  const [tab, setTab] = useState<"saved" | "favorites" | "ignored" | "lists" | "marathons">(
+    initialTab,
+  );
   const [newListName, setNewListName] = useState("");
   const [selectedListId, setSelectedListId] = useState("");
-  const selectedList = customLists.find((list) => list.id === selectedListId) || customLists[0];
-  const entries = ITEMS.filter((item) => tab === "saved" ? watchlist.has(item.id) : tab === "favorites" ? favorites.has(item.id) : tab === "ignored" ? ignored.has(item.id) : selectedList?.items.includes(item.id));
+  const selectedList =
+    customLists.find((list) => list.id === selectedListId) || customLists[0];
+  const entries = ITEMS.filter((item) =>
+    tab === "saved"
+      ? watchlist.has(item.id)
+      : tab === "favorites"
+        ? favorites.has(item.id)
+        : tab === "ignored"
+          ? ignored.has(item.id)
+          : tab === "lists" && selectedList?.items.includes(item.id),
+  );
   const createList = () => {
-    const name = newListName.trim(); if (!name) return;
+    const name = newListName.trim();
+    if (!name) return;
     const id = `list-${Date.now()}`;
-    onLists((current) => [...current, { id, name, color: ["#ff5b61", "#75a7ff", "#b77cff", "#57cfb0"][current.length % 4], items: [] }]);
-    setSelectedListId(id); setNewListName(""); setTab("lists");
+    onLists((current) => [
+      ...current,
+      {
+        id,
+        name,
+        color: ["#ff5b61", "#75a7ff", "#b77cff", "#57cfb0"][current.length % 4],
+        items: [],
+      },
+    ]);
+    setSelectedListId(id);
+    setNewListName("");
+    setTab("lists");
   };
-  return <section className="dashboard-workspace list-workspace">
-    <header className="dashboard-toolbar"><div><span className="dash-eyebrow">Tu colección personal</span><h1>Biblioteca</h1></div><div className="list-tabs"><button className={tab === "saved" ? "active" : ""} onClick={() => setTab("saved")}><Icon name="bookmark"/>Guardados <b>{watchlist.size}</b></button><button className={tab === "favorites" ? "active" : ""} onClick={() => setTab("favorites")}><Icon name="star"/>Favoritos <b>{favorites.size}</b></button><button className={tab === "lists" ? "active" : ""} onClick={() => setTab("lists")}><Icon name="note"/>Listas <b>{customLists.length}</b></button><button className={tab === "ignored" ? "active" : ""} onClick={() => setTab("ignored")}><Icon name="close"/>Ocultos <b>{ignored.size}</b></button></div></header>
-    <div className="dashboard-scroll">
-      {tab === "lists" && <div className="custom-list-toolbar"><div className="custom-list-pills">{customLists.map((list) => <button key={list.id} className={selectedList?.id === list.id ? "active" : ""} onClick={() => setSelectedListId(list.id)} style={{ "--list": list.color } as React.CSSProperties}><i/>{list.name}<b>{list.items.length}</b></button>)}</div><div className="new-list"><input value={newListName} onChange={(event) => setNewListName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") createList(); }} placeholder="Nueva lista…"/><button onClick={createList}><Icon name="plus"/>Crear</button>{selectedList && <button className="delete-list" onClick={() => { onLists((current) => current.filter((list) => list.id !== selectedList.id)); setSelectedListId(""); }}><Icon name="close"/>Eliminar lista</button>}</div></div>}
-      {tab === "lists" && customLists.length > 0 && <div className="custom-list-gallery">{customLists.map((list)=><button key={list.id} className={selectedList?.id===list.id?"active":""} style={{"--list":list.color} as React.CSSProperties} onClick={()=>setSelectedListId(list.id)}><span className="list-collage">{list.items.slice(0,4).map((id)=>ITEM_BY_ID.get(id)&&<img src={posterFor(ITEM_BY_ID.get(id)!,"thumb")} alt="" key={id}/>)}{Array.from({length:Math.max(0,4-list.items.length)},(_,index)=><i key={index}/>)}</span><span><strong>{list.name}</strong><small>{list.items.length} títulos</small></span></button>)}</div>}
-      {entries.length ? <div className="library-list">{entries.map((item) => {
-        const total = EPISODE_COUNTS[item.id] || 0;
-        const done = episodes[item.id]?.length || 0;
-        return <article key={item.id} className={`media-${item.type}`} style={mediaStyle(item)}><div className="library-poster"><img src={posterFor(item)} alt=""/><span>{TYPE_LABEL[item.type]}</span></div><div><span><b className="type-dot"/>{trackForId(item.trackId)?.short} · {item.date}</span><h2>{item.title}</h2><p>{ratings[item.id] ? `${"★".repeat(ratings[item.id])} · ` : ""}{watched.has(item.id) ? "Completada" : total ? `${done}/${total} capítulos vistos` : "Pendiente"}</p>{total > 0 && <i><b style={{ width: `${done / total * 100}%` }}/></i>}</div><div className="library-actions"><button onClick={() => onOpenDetail(item)}>Abrir</button><button title="Ver en el mapa" onClick={() => onOpenMap(item)}><Icon name="route"/></button>{tab === "saved" ? <button title="Quitar de guardados" onClick={() => onToggleWatchlist(item)}><Icon name="close"/></button> : tab === "favorites" ? <button title="Quitar de favoritos" onClick={() => onToggleFavorite(item)}><Icon name="close"/></button> : tab === "ignored" ? <button onClick={() => onRestore(item)}>Restaurar</button> : <button title="Quitar de esta lista" onClick={() => onLists((current) => current.map((list) => list.id === selectedList?.id ? { ...list, items: list.items.filter((id) => id !== item.id) } : list))}><Icon name="close"/></button>}</div></article>;
-      })}</div> : <div className="list-empty"><Icon name={tab === "favorites" ? "star" : tab === "lists" ? "note" : tab === "saved" ? "bookmark" : "check"} size={36}/><h2>{tab === "favorites" ? "Aún no tienes favoritos" : tab === "lists" ? customLists.length ? "Esta lista está vacía" : "Crea tu primera lista" : tab === "saved" ? "Tu lista está vacía" : "No has descartado nada"}</h2><p>Explora un título y usa su ficha para guardarlo, calificarlo u organizarlo.</p><div className="empty-actions"><button onClick={onBrowseRecommendations}><Icon name="spark"/>Ver recomendaciones</button><button onClick={onBrowseMap}><Icon name="route"/>Explorar el mapa</button></div></div>}
-    </div>
-  </section>;
+  return (
+    <section className="dashboard-workspace list-workspace">
+      <header className="dashboard-toolbar">
+        <div>
+          <span className="dash-eyebrow">Tu colección personal</span>
+          <h1>Biblioteca</h1>
+        </div>
+        <div className="list-tabs">
+          <button
+            className={tab === "saved" ? "active" : ""}
+            onClick={() => setTab("saved")}
+          >
+            <Icon name="bookmark" />
+            Guardados <b>{watchlist.size}</b>
+          </button>
+          <button
+            className={tab === "favorites" ? "active" : ""}
+            onClick={() => setTab("favorites")}
+          >
+            <Icon name="star" />
+            Favoritos <b>{favorites.size}</b>
+          </button>
+          <button
+            className={tab === "lists" ? "active" : ""}
+            onClick={() => setTab("lists")}
+          >
+            <Icon name="note" />
+            Listas <b>{customLists.length}</b>
+          </button>
+          <button
+            className={tab === "marathons" ? "active" : ""}
+            onClick={() => setTab("marathons")}
+          >
+            <Icon name="calendar" />
+            Maratones <b>{marathons.length}</b>
+          </button>
+          <button
+            className={tab === "ignored" ? "active" : ""}
+            onClick={() => setTab("ignored")}
+          >
+            <Icon name="close" />
+            Ocultos <b>{ignored.size}</b>
+          </button>
+        </div>
+      </header>
+      <div className="dashboard-scroll">
+        {tab === "lists" && (
+          <div className="custom-list-toolbar">
+            <div className="custom-list-pills">
+              {customLists.map((list) => (
+                <button
+                  key={list.id}
+                  className={selectedList?.id === list.id ? "active" : ""}
+                  onClick={() => setSelectedListId(list.id)}
+                  style={{ "--list": list.color } as React.CSSProperties}
+                >
+                  <i />
+                  {list.name}
+                  <b>{list.items.length}</b>
+                </button>
+              ))}
+            </div>
+            <div className="new-list">
+              <input
+                value={newListName}
+                onChange={(event) => setNewListName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") createList();
+                }}
+                placeholder="Nueva lista…"
+              />
+              <button onClick={createList}>
+                <Icon name="plus" />
+                Crear
+              </button>
+              {selectedList && (
+                <button
+                  className="delete-list"
+                  onClick={() => {
+                    onLists((current) =>
+                      current.filter((list) => list.id !== selectedList.id),
+                    );
+                    setSelectedListId("");
+                  }}
+                >
+                  <Icon name="close" />
+                  Eliminar lista
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {tab === "lists" && customLists.length > 0 && (
+          <div className="custom-list-gallery">
+            {customLists.map((list) => (
+              <button
+                key={list.id}
+                className={selectedList?.id === list.id ? "active" : ""}
+                style={{ "--list": list.color } as React.CSSProperties}
+                onClick={() => setSelectedListId(list.id)}
+              >
+                <span className="list-collage">
+                  {list.items
+                    .slice(0, 4)
+                    .map(
+                      (id) =>
+                        ITEM_BY_ID.get(id) && (
+                          <img
+                            src={posterFor(ITEM_BY_ID.get(id)!, "thumb")}
+                            alt=""
+                            key={id}
+                          />
+                        ),
+                    )}
+                  {Array.from(
+                    { length: Math.max(0, 4 - list.items.length) },
+                    (_, index) => (
+                      <i key={index} />
+                    ),
+                  )}
+                </span>
+                <span>
+                  <strong>{list.name}</strong>
+                  <small>{list.items.length} títulos</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {tab === "marathons" && (
+          <section className="marathon-library">
+            <div className="marathon-library-intro">
+              <div>
+                <span className="dash-eyebrow">TUS RECORRIDOS</span>
+                <h2>Maratones guardados</h2>
+                <p>Crea una sucesión, continúa por el siguiente pendiente o ábrela como un mapa compacto.</p>
+              </div>
+              <button onClick={onCreateMarathon}><Icon name="plus"/>Crear nuevo maratón</button>
+            </div>
+            {marathons.length ? <div className="marathon-library-grid">{marathons.map((marathon)=>{
+              const completed=marathon.tasks.filter((task)=>marathonTaskDone(task,watched,episodes)).length;
+              const totalMinutes=marathon.tasks.reduce((sum,task)=>sum+marathonTaskMinutes(task),0);
+              const nextTask=marathon.tasks.find((task)=>!marathonTaskDone(task,watched,episodes));
+              const nextItem=nextTask?ITEM_BY_ID.get(nextTask.itemId):undefined;
+              const progress=Math.round(completed/Math.max(1,marathon.tasks.length)*100);
+              const status=completed===marathon.tasks.length?"Completado":completed>0?"En curso":"Por empezar";
+              return <article key={marathon.id} className="marathon-library-card">
+                <button className="marathon-library-art" onClick={()=>onOpenSequence({id:marathon.id,title:marathon.name,subtitle:`${marathon.tasks.length} sesiones · ${formatMinutes(totalMinutes)}`,tasks:marathon.tasks,kind:"marathon"})} aria-label={`Abrir mapa de ${marathon.name}`}>
+                  <span className="marathon-library-collage">{marathon.coverIds.slice(0,4).map((id)=>ITEM_BY_ID.get(id)&&<img key={id} src={artworkFor(ITEM_BY_ID.get(id),"card")} alt="" loading="lazy"/>)}{Array.from({length:Math.max(0,4-marathon.coverIds.length)},(_,index)=><i key={index}/>)}</span>
+                  <b>{progress}%</b>
+                  <em>{status}</em>
+                </button>
+                <div className="marathon-library-copy"><small>{marathon.author} · {new Date(marathon.createdAt).toLocaleDateString("es-PE")}</small><h3>{marathon.name}</h3><p>{marathon.description||"Una ruta personalizada del multiverso Marvel."}</p><i><b style={{width:`${progress}%`}}/></i><span><strong>{completed}/{marathon.tasks.length}</strong> sesiones · {formatMinutes(totalMinutes)}</span>{nextItem&&<button onClick={()=>onOpenDetail(nextItem)}><Icon name="target"/><span><small>Siguiente pendiente</small><strong>{nextItem.title}{nextTask?.episode?` · Cap. ${nextTask.episode}`:""}</strong></span></button>}</div>
+                <div className="marathon-library-actions"><button onClick={()=>onOpenSequence({id:marathon.id,title:marathon.name,subtitle:`${marathon.tasks.length} sesiones · ${formatMinutes(totalMinutes)}`,tasks:marathon.tasks,kind:"marathon"})}><Icon name="route"/>Ver mapa</button><button onClick={()=>onEditMarathon(marathon.id)}><Icon name="grip"/>Editar</button><button onClick={async()=>{try{const code=encodeMarathonCode(marathon);await navigator.clipboard?.writeText(code);notify("Código Nexus copiado");}catch{notify("No se pudo copiar el código");}}}><Icon name="share"/>Compartir</button><button onClick={()=>{const duplicate={...marathon,id:`marathon-${crypto.randomUUID?.()||Date.now()}`,name:`${marathon.name} · copia`,createdAt:new Date().toISOString(),author:"Mi biblioteca"};onMarathons((current)=>[duplicate,...current]);notify("Maratón duplicado");}}><Icon name="plus"/>Duplicar</button><button className="danger" onClick={()=>{if(window.confirm(`¿Eliminar “${marathon.name}”?`)){onMarathons((current)=>current.filter((entry)=>entry.id!==marathon.id));notify("Maratón eliminado");}}}><Icon name="close"/>Eliminar</button></div>
+              </article>;
+            })}</div>:<div className="list-empty marathon-empty"><Icon name="calendar" size={38}/><h2>Aún no tienes maratones</h2><p>Crea uno para ti o importa el código de un amigo. Aparecerá aquí y se sincronizará automáticamente.</p><div className="empty-actions"><button onClick={onCreateMarathon}><Icon name="plus"/>Crear mi primer maratón</button></div></div>}
+          </section>
+        )}
+        {tab !== "marathons" && (entries.length ? (
+          <div className="library-list">
+            {entries.map((item) => {
+              const total = EPISODE_COUNTS[item.id] || 0;
+              const done = episodes[item.id]?.length || 0;
+              return (
+                <article
+                  key={item.id}
+                  className={`media-${item.type}`}
+                  style={mediaStyle(item)}
+                >
+                  <div className="library-poster">
+                    <img src={posterFor(item)} alt="" />
+                    <span>{TYPE_LABEL[item.type]}</span>
+                  </div>
+                  <div>
+                    <span>
+                      <b className="type-dot" />
+                      {trackForId(item.trackId)?.short} · {item.date}
+                    </span>
+                    <h2>{item.title}</h2>
+                    <p>
+                      {ratings[item.id]
+                        ? `${"★".repeat(ratings[item.id])} · `
+                        : ""}
+                      {watched.has(item.id)
+                        ? "Completada"
+                        : total
+                          ? `${done}/${total} capítulos vistos`
+                          : "Pendiente"}
+                    </p>
+                    {total > 0 && (
+                      <i>
+                        <b style={{ width: `${(done / total) * 100}%` }} />
+                      </i>
+                    )}
+                  </div>
+                  <div className="library-actions">
+                    <button onClick={() => onOpenDetail(item)}>Abrir</button>
+                    <button
+                      title="Ver en el mapa"
+                      onClick={() => onOpenMap(item)}
+                    >
+                      <Icon name="route" />
+                    </button>
+                    {tab === "saved" ? (
+                      <button
+                        title="Quitar de guardados"
+                        onClick={() => onToggleWatchlist(item)}
+                      >
+                        <Icon name="close" />
+                      </button>
+                    ) : tab === "favorites" ? (
+                      <button
+                        title="Quitar de favoritos"
+                        onClick={() => onToggleFavorite(item)}
+                      >
+                        <Icon name="close" />
+                      </button>
+                    ) : tab === "ignored" ? (
+                      <button onClick={() => onRestore(item)}>Restaurar</button>
+                    ) : (
+                      <button
+                        title="Quitar de esta lista"
+                        onClick={() =>
+                          onLists((current) =>
+                            current.map((list) =>
+                              list.id === selectedList?.id
+                                ? {
+                                    ...list,
+                                    items: list.items.filter(
+                                      (id) => id !== item.id,
+                                    ),
+                                  }
+                                : list,
+                            ),
+                          )
+                        }
+                      >
+                        <Icon name="close" />
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="list-empty">
+            <Icon
+              name={
+                tab === "favorites"
+                  ? "star"
+                  : tab === "lists"
+                    ? "note"
+                    : tab === "saved"
+                      ? "bookmark"
+                      : "check"
+              }
+              size={36}
+            />
+            <h2>
+              {tab === "favorites"
+                ? "Aún no tienes favoritos"
+                : tab === "lists"
+                  ? customLists.length
+                    ? "Esta lista está vacía"
+                    : "Crea tu primera lista"
+                  : tab === "saved"
+                    ? "Tu lista está vacía"
+                    : "No has descartado nada"}
+            </h2>
+            <p>
+              Explora un título y usa su ficha para guardarlo, calificarlo u
+              organizarlo.
+            </p>
+            <div className="empty-actions">
+              <button onClick={onBrowseRecommendations}>
+                <Icon name="spark" />
+                Ver recomendaciones
+              </button>
+              <button onClick={onBrowseMap}>
+                <Icon name="route" />
+                Explorar el mapa
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SequenceMapModal({data,watched,episodes,onClose,onOpenItem}:{data:SequenceMapData;watched:Set<string>;episodes:EpisodeState;onClose:()=>void;onOpenItem:(item:MapItem)=>void}) {
+  const viewportRef=useRef<HTMLDivElement>(null);
+  const drag=useRef({active:false,x:0,y:0,left:0,top:0});
+  const [zoom,setZoom]=useState(1);
+  const entries=data.tasks.map((task,index)=>({task,index,item:ITEM_BY_ID.get(task.itemId)})).filter((entry):entry is {task:SharedMarathon["tasks"][number];index:number;item:MapItem}=>Boolean(entry.item));
+  const lanes=[...new Set(entries.map((entry)=>entry.item.trackId))];
+  const baseWidth=Math.max(760,entries.length*190+180);
+  const baseHeight=Math.max(390,lanes.length*150+170);
+  const position=(entry:{item:MapItem;index:number})=>({x:100+entry.index*190,y:95+Math.max(0,lanes.indexOf(entry.item.trackId))*150});
+  const completed=entries.filter((entry)=>marathonTaskDone(entry.task,watched,episodes)).length;
+  const next=entries.find((entry)=>!marathonTaskDone(entry.task,watched,episodes));
+  const fit=useCallback(()=>{const viewport=viewportRef.current;if(!viewport)return;const nextZoom=Math.max(.48,Math.min(1,(viewport.clientWidth-48)/baseWidth,(viewport.clientHeight-48)/baseHeight));setZoom(nextZoom);window.setTimeout(()=>viewport.scrollTo({left:0,top:0,behavior:"smooth"}),0);},[baseHeight,baseWidth]);
+  useEffect(()=>{const key=(event:KeyboardEvent)=>{if(event.key==="Escape")onClose();};window.addEventListener("keydown",key);const timer=window.setTimeout(fit,30);return()=>{window.clearTimeout(timer);window.removeEventListener("keydown",key);};},[fit,onClose]);
+  const focusEntry=(entry:typeof entries[number])=>{const viewport=viewportRef.current;if(!viewport)return;const point=position(entry);viewport.scrollTo({left:Math.max(0,point.x*zoom-viewport.clientWidth/2),top:Math.max(0,point.y*zoom-viewport.clientHeight/2),behavior:"smooth"});};
+  return <div className="sequence-map-layer" role="dialog" aria-modal="true" aria-label={`Mapa de ${data.title}`} onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose();}}>
+    <section className="sequence-map-modal" data-kind={data.kind}>
+      <header><div><span className="dash-eyebrow">{data.kind==="marathon"?"MAPA DEL MARATÓN":data.kind==="era"?"MAPA DE LA ERA":data.kind==="journey"?"VIAJE DEL PERSONAJE":"RUTA NARRATIVA"}</span><h2>{data.title}</h2><p>{data.subtitle}</p></div><div className="sequence-progress"><strong>{Math.round(completed/Math.max(1,entries.length)*100)}%</strong><span><i><b style={{width:`${completed/Math.max(1,entries.length)*100}%`}}/></i><small>{completed}/{entries.length} completados</small></span></div><button onClick={onClose} aria-label="Cerrar mapa"><Icon name="close"/></button></header>
+      <div className="sequence-map-tools"><span><i/> Arrastra para explorar</span>{next&&<button onClick={()=>focusEntry(next)}><Icon name="target"/>Siguiente pendiente</button>}<div><button onClick={()=>setZoom((value)=>Math.max(.48,value-.12))} aria-label="Alejar"><Icon name="minus"/></button><b>{Math.round(zoom*100)}%</b><button onClick={()=>setZoom((value)=>Math.min(1.4,value+.12))} aria-label="Acercar"><Icon name="plus"/></button><button onClick={fit}><Icon name="fit"/>Ajustar</button></div></div>
+      <div ref={viewportRef} className="sequence-map-viewport" onWheel={(event)=>{if(!event.ctrlKey)return;event.preventDefault();setZoom((value)=>Math.max(.48,Math.min(1.4,value-event.deltaY*.001)));}} onPointerDown={(event)=>{if((event.target as HTMLElement).closest("button"))return;const viewport=viewportRef.current;if(!viewport)return;drag.current={active:true,x:event.clientX,y:event.clientY,left:viewport.scrollLeft,top:viewport.scrollTop};viewport.setPointerCapture(event.pointerId);}} onPointerMove={(event)=>{if(!drag.current.active||!viewportRef.current)return;viewportRef.current.scrollTo({left:drag.current.left-(event.clientX-drag.current.x),top:drag.current.top-(event.clientY-drag.current.y)});}} onPointerUp={()=>{drag.current.active=false;}} onPointerCancel={()=>{drag.current.active=false;}}>
+        <div className="sequence-map-scale" style={{width:baseWidth*zoom,height:baseHeight*zoom}}><div className="sequence-map-world" style={{width:baseWidth,height:baseHeight,transform:`scale(${zoom})`}}>
+          <div className="sequence-lanes">{lanes.map((trackId,index)=>{const track=trackForId(trackId);return <span key={trackId} style={{top:95+index*150,"--lane":track?.color||"#8e97a5"} as React.CSSProperties}><b>{track?.short||trackId}</b></span>})}</div>
+          <svg width={baseWidth} height={baseHeight} aria-hidden="true">{entries.slice(0,-1).map((entry,index)=>{const nextEntry=entries[index+1];const from=position(entry);const to=position(nextEntry);const color=trackForId(nextEntry.item.trackId)?.color||"#9ba5b3";return <path key={`${entry.index}-${nextEntry.index}`} d={`M ${from.x+61} ${from.y} C ${from.x+125} ${from.y}, ${to.x-70} ${to.y}, ${to.x-8} ${to.y}`} stroke={color}/>;})}</svg>
+          {entries.map((entry)=>{const point=position(entry);const done=marathonTaskDone(entry.task,watched,episodes);const track=trackForId(entry.item.trackId);return <button key={`${entry.task.itemId}-${entry.task.episode||0}-${entry.index}`} className={`sequence-node ${done?"done":""} ${next?.index===entry.index?"next":""}`} style={{left:point.x,top:point.y,"--node":track?.color||"#9ba5b3"} as React.CSSProperties} onClick={()=>onOpenItem(entry.item)}><span><img src={artworkFor(entry.item,"card")} alt="" loading="lazy"/><b>{done?<Icon name="check"/>:String(entry.index+1).padStart(2,"0")}</b></span><small>{entry.task.episode?`CAPÍTULO ${entry.task.episode}`:TYPE_LABEL[entry.item.type]} · {Math.floor(entry.item.releaseValue)}</small><strong>{entry.item.title}</strong></button>})}
+        </div></div>
+      </div>
+      <footer><span>Ctrl + rueda para zoom · Esc para cerrar</span><button onClick={onClose}>Cerrar mapa</button></footer>
+    </section>
+  </div>;
 }
 
 function NarrativeOverlay({ targetId, zoom, mapHeight }: { targetId: string; zoom: number; mapHeight: number }) {

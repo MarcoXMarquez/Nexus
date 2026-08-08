@@ -425,6 +425,16 @@ export async function syncLocalMarathons(profileId: string) {
   const fingerprintKey = `nexus-cloud-marathons-v1:${profileId}`;
   const fingerprint = JSON.stringify(local);
   if (localStorage.getItem(fingerprintKey) === fingerprint) return;
+  const remote = await client.from("marathons").select("id,source_local_id").eq("owner_profile_id", profileId).not("source_local_id", "is", null);
+  // Hasta aplicar la migración 002, la instalación sigue funcionando en local.
+  if (remote.error && (remote.error.code === "PGRST204" || /source_local_id/i.test(remote.error.message))) return;
+  if (remote.error) throw remote.error;
+  const localIds = new Set(local.map((marathon) => marathon.id));
+  const removedRemoteIds = (remote.data || []).filter((entry) => entry.source_local_id && !localIds.has(entry.source_local_id as string)).map((entry) => entry.id as string);
+  if (removedRemoteIds.length) {
+    const removed = await client.from("marathons").delete().in("id", removedRemoteIds).eq("owner_profile_id", profileId);
+    if (removed.error) throw removed.error;
+  }
   for (const marathon of local) {
     const existing = await client.from("marathons").select("id").eq("owner_profile_id", profileId).eq("source_local_id", marathon.id).maybeSingle();
     // Permite que una instalación actual siga funcionando hasta ejecutar 002.

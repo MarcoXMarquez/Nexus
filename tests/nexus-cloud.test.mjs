@@ -78,6 +78,28 @@ test("portable marathon codes preserve title order and reject tampering", async 
   assert.throws(() => codec.decodeMarathonCode(`${code.slice(0, -1)}X`), /modificado|incompleto/i);
 });
 
+test("personal marathons live in the library and open as reusable sequence maps", async () => {
+  const renderer = await read("../desktop/renderer.tsx");
+  const discovery = await read("../app/features/discovery-hub.tsx");
+  const service = await read("../app/cloud/cloud-service.ts");
+  assert.match(renderer, /Guardar en mi Biblioteca/);
+  assert.match(renderer, /Maratones guardados/);
+  assert.match(renderer, /function SequenceMapModal/);
+  assert.match(renderer, /Ver como mapa/);
+  assert.match(discovery, /Explorar mapa/);
+  assert.match(discovery, /Ver viaje en el mapa/);
+  assert.match(service, /removedRemoteIds/);
+});
+
+test("achievement artwork is independent from posters and keeps its provenance", async () => {
+  const renderer = await read("../desktop/renderer.tsx");
+  const art = await read("../app/features/achievement-art.ts");
+  assert.match(renderer, /achievementArtFor/);
+  assert.match(art, /BACKDROP_BY_ID/);
+  assert.match(art, /sfwReviewed:true/);
+  assert.match(art, /source:art\.source/);
+});
+
 test("profile management is replaced by the personal archive experience", async () => {
   const renderer = await read("../desktop/renderer.tsx");
   const workspace = await read("../app/cloud/cloud-workspace.tsx");
