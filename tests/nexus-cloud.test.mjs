@@ -53,6 +53,19 @@ test("catalog progress is normalized and synchronized automatically", async () =
   assert.doesNotMatch(cloud, /Sincronizar ahora/);
 });
 
+test("unwatch operations remain explicit cloud tombstones", async () => {
+  const migration = await read("../supabase/migrations/202608080003_progress_tombstones.sql");
+  const service = await read("../app/cloud/cloud-service.ts");
+  const renderer = await read("../desktop/renderer.tsx");
+  const repository = await read("../app/cloud/local-repository.ts");
+  assert.match(migration, /alter column watched_at drop not null/i);
+  assert.match(migration, /device_id text/i);
+  assert.match(service, /status: ignored\.has\(titleId\).*"pending"/s);
+  assert.match(service, /completed: localEpisodeKeys\.has\(key\)/);
+  assert.match(renderer, /else delete next\[item\.id\]/);
+  assert.match(repository, /nexus:snapshot-applied/);
+});
+
 test("portable marathon codes preserve title order and reject tampering", async () => {
   const source = await read("../app/features/marathon-code.ts");
   const javascript = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -74,4 +87,26 @@ test("profile management is replaced by the personal archive experience", async 
   assert.doesNotMatch(renderer, /Crear perfil/);
   assert.doesNotMatch(workspace, /id: "profiles"/);
   for (const feature of ["Eras", "Viajes", "Cartas", "Pósteres", "Sala 3D", "Logros"]) assert.match(discovery, new RegExp(feature));
+});
+
+test("achievements are visual, searchable and grouped by characters", async () => {
+  const renderer = await read("../desktop/renderer.tsx");
+  const styles = await read("../desktop/styles.css");
+  assert.match(renderer, /El asombroso Spider-Man/);
+  assert.match(renderer, /Personajes y equipos/);
+  assert.match(renderer, /Buscar personaje, equipo, saga o logro/);
+  assert.match(renderer, /achievement-detail-art/);
+  assert.match(renderer, /achievement-thumb/);
+  assert.match(styles, /\.achievement-group-rail/);
+  assert.match(styles, /\.achievement-detail-art/);
+});
+
+test("spoiler modes use dedicated tabs and the temporal tree artwork", async () => {
+  const renderer = await read("../desktop/renderer.tsx");
+  const styles = await read("../desktop/styles.css");
+  assert.match(renderer, /Universo completo/);
+  assert.match(renderer, /Ruta protegida/);
+  assert.match(renderer, /nexus-mode-tabs/);
+  assert.match(styles, /loki-time-tree-v1\.webp/);
+  assert.doesNotMatch(styles, /--story-art:url\("\/backdrops\/hero\/doctor-strange\.webp"\)/);
 });

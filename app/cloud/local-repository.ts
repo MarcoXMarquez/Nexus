@@ -98,6 +98,7 @@ export function applySnapshot(snapshot: NexusSnapshot, profileId = snapshot.prof
   }
   localStorage.setItem(`${CLOUD_REVISION_KEY}:${profileId}`, String(snapshot.revision));
   localStorage.setItem(LAST_SYNC_KEY, snapshot.updatedAt);
+  window.dispatchEvent(new CustomEvent("nexus:snapshot-applied", { detail: { profileId, revision: snapshot.revision } }));
 }
 
 export async function saveLocalSnapshot(snapshot: NexusSnapshot) {

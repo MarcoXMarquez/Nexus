@@ -22,7 +22,7 @@ type SharedMarathon = { version: 1; id: string; name: string; description: strin
 type Preferences = { accent: "red" | "violet" | "cyan"; intensity: number; density: "comfortable" | "compact"; cardSize: "small" | "medium" | "large"; fontScale: number; highContrast: boolean; reduceMotion: boolean; achievements: boolean };
 type AchievementTier = "Bronce" | "Plata" | "Oro" | "Vibranium" | "Diamante";
 type AchievementRecord = { id: string; version: number; unlockedAt: string; progressSnapshot: { completedIds: string[]; requiredIds: string[] } };
-type Achievement = { id: string; version: number; title: string; description: string; icon: IconName; tier: AchievementTier; unlocked: boolean; progress: number; requiredIds: string[]; completedIds: string[]; unlockedAt?: string };
+type Achievement = { id: string; version: number; title: string; description: string; icon: IconName; tier: AchievementTier; unlocked: boolean; progress: number; current: number; goal: number; requiredIds: string[]; completedIds: string[]; coverId?: string; unlockedAt?: string };
 type ToastState = { message: string; actionLabel?: string; onAction?: () => void };
 type DetailPanelMode = "full" | "compact";
 type GlobalHit = { key: string; item: MapItem; episode?: number; category: "Título" | "Capítulo" | "Personaje" | "Universo" | "Conexión"; context: string };
@@ -341,6 +341,27 @@ function useStoredProgress() {
   const [rewatches, setRewatches] = useState<Record<string, number>>(() => { try { return JSON.parse(localStorage.getItem(REWATCHES_KEY) || "{}"); } catch { return {}; } });
   const [history, setHistory] = useState<ActivityEvent[]>(() => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; } });
   const [customLists, setCustomLists] = useState<CustomList[]>(() => { try { return JSON.parse(localStorage.getItem(CUSTOM_LISTS_KEY) || "[]"); } catch { return []; } });
+  useEffect(() => {
+    const reloadCloudSnapshot = () => {
+      try { setWatched(new Set(JSON.parse(localStorage.getItem(WATCHED_KEY) || "[]"))); } catch { setWatched(new Set()); }
+      try { setEpisodes(JSON.parse(localStorage.getItem(EPISODES_KEY) || "{}")); } catch { setEpisodes({}); }
+      try { setWatchlist(new Set(JSON.parse(localStorage.getItem(WATCHLIST_KEY) || "[]"))); } catch { setWatchlist(new Set()); }
+      try { setIgnored(new Set(JSON.parse(localStorage.getItem(IGNORED_KEY) || "[]"))); } catch { setIgnored(new Set()); }
+      try { setFavoriteTracks(new Set(JSON.parse(localStorage.getItem(FAVORITE_TRACKS_KEY) || "[]"))); } catch { setFavoriteTracks(new Set()); }
+      setIntent((localStorage.getItem(INTENT_KEY) as Intent) || "chronological");
+      setSpoilerSafe(localStorage.getItem(SPOILERS_KEY) !== "false");
+      try { setActivity(JSON.parse(localStorage.getItem(ACTIVITY_KEY) || "{}")); } catch { setActivity({}); }
+      try { setRatings(JSON.parse(localStorage.getItem(RATINGS_KEY) || "{}")); } catch { setRatings({}); }
+      try { setFavorites(new Set(JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]"))); } catch { setFavorites(new Set()); }
+      try { setNotes(JSON.parse(localStorage.getItem(NOTES_KEY) || "{}")); } catch { setNotes({}); }
+      try { setWatchedDates(JSON.parse(localStorage.getItem(WATCHED_DATES_KEY) || "{}")); } catch { setWatchedDates({}); }
+      try { setRewatches(JSON.parse(localStorage.getItem(REWATCHES_KEY) || "{}")); } catch { setRewatches({}); }
+      try { setHistory(JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]")); } catch { setHistory([]); }
+      try { setCustomLists(JSON.parse(localStorage.getItem(CUSTOM_LISTS_KEY) || "[]")); } catch { setCustomLists([]); }
+    };
+    window.addEventListener("nexus:snapshot-applied", reloadCloudSnapshot);
+    return () => window.removeEventListener("nexus:snapshot-applied", reloadCloudSnapshot);
+  }, []);
   useEffect(() => localStorage.setItem(WATCHED_KEY, JSON.stringify([...watched])), [watched]);
   useEffect(() => localStorage.setItem(EPISODES_KEY, JSON.stringify(episodes)), [episodes]);
   useEffect(() => localStorage.setItem(WATCHLIST_KEY, JSON.stringify([...watchlist])), [watchlist]);
@@ -373,9 +394,10 @@ export function App() {
   const [globalIndex, setGlobalIndex] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [detailMode, setDetailMode] = useState<DetailPanelMode>("full");
   const [detailPinned, setDetailPinned] = useState(false);
-  const [preferences, setPreferences] = useState<Preferences>(() => { try { const stored = JSON.parse(localStorage.getItem(PREFERENCES_KEY) || "{}"); return { ...DEFAULT_PREFERENCES, ...stored, fontScale: Math.max(100, Math.min(135, Number(stored.fontScale) || 100)) }; } catch { return DEFAULT_PREFERENCES; } });
+  const [preferences, setPreferences] = useState<Preferences>(() => { try { const stored = JSON.parse(localStorage.getItem(PREFERENCES_KEY) || "{}"); return { ...DEFAULT_PREFERENCES, ...stored, achievements:true, fontScale: Math.max(100, Math.min(135, Number(stored.fontScale) || 100)) }; } catch { return DEFAULT_PREFERENCES; } });
   const [zoom, setZoom] = useState(0.46);
   const [mapScroll, setMapScroll] = useState({ left: 0, top: 0, width: 1, height: 1 });
   const [dragging, setDragging] = useState(false);
@@ -398,7 +420,7 @@ export function App() {
   const toastTimer = useRef<number | null>(null);
   const zoomTimer = useRef<number | null>(null);
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0];
-  const globalHits = useMemo(() => globalHitsFor(globalQuery), [globalQuery]);
+  const globalHits = useMemo(() => globalHitsFor(globalQuery).filter((hit)=>!spoilerSafe||watched.has(hit.item.id)||!ITEMS.some((entry)=>entry.trackId===hit.item.trackId&&!entry.upcoming&&!watched.has(entry.id)&&entry.releaseValue<hit.item.releaseValue)), [globalQuery, spoilerSafe, watched]);
 
   useEffect(() => { localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles)); }, [profiles]);
   useEffect(() => { localStorage.setItem(ACTIVE_PROFILE_KEY, activeProfileId); }, [activeProfileId]);
@@ -451,14 +473,15 @@ export function App() {
   const releasedItems = useMemo(() => ITEMS.filter((item) => !item.upcoming), []);
   const completedCount = releasedItems.filter((item) => watched.has(item.id)).length;
   const percent = Math.round((completedCount / releasedItems.length) * 100);
-  const searchResults = useMemo(() => query.trim() ? ITEMS.filter((item) => normalize(item.title).includes(normalize(query))).slice(0, 7) : [], [query]);
+  const searchResults = useMemo(() => query.trim() ? ITEMS.filter((item) => normalize(item.title).includes(normalize(query))&&(!spoilerSafe||watched.has(item.id)||!ITEMS.some((entry)=>entry.trackId===item.trackId&&!entry.upcoming&&!watched.has(entry.id)&&entry.releaseValue<item.releaseValue))).slice(0, 7) : [], [query, spoilerSafe, watched]);
   const mapHeight = verticalMetrics(zoom).height;
   const selectedTrackIds = useMemo(() => favoriteTracks.size ? favoriteTracks : new Set(TRACKS.map((track) => track.id)), [favoriteTracks]);
   const eligibleItems = useMemo(() => releasedItems.filter((item) => {
     const warnings = TITLE_METADATA[item.id]?.contentWarnings || [];
     const childSafe = !activeProfile?.child || !warnings.some((warning) => /intensa|gráfica|adultos|lenguaje fuerte|terror|perturbadoras/i.test(warning));
-    return childSafe && selectedTrackIds.has(item.trackId) && !ignored.has(item.id) && !watched.has(item.id);
-  }), [activeProfile?.child, ignored, releasedItems, selectedTrackIds, watched]);
+    const spoilerSafePosition=!spoilerSafe||!releasedItems.some((entry)=>entry.trackId===item.trackId&&!watched.has(entry.id)&&entry.releaseValue<item.releaseValue);
+    return childSafe && spoilerSafePosition && selectedTrackIds.has(item.trackId) && !ignored.has(item.id) && !watched.has(item.id);
+  }), [activeProfile?.child, ignored, releasedItems, selectedTrackIds, spoilerSafe, watched]);
   const partialSeries = useMemo(() => ITEMS
     .filter((item) => {
       const total = EPISODE_COUNTS[item.id] || 0;
@@ -486,7 +509,7 @@ export function App() {
     return ordered.slice(0, 8).map((item) => {
       const done = episodes[item.id]?.length || 0;
       const track = trackForId(item.trackId);
-      let reason = CONNECTION_REASON[item.id] || `Pertenece a la línea ${track?.short || "Marvel"}`;
+      let reason = spoilerSafe ? "Siguiente opción segura en tu recorrido" : CONNECTION_REASON[item.id] || `Pertenece a la línea ${track?.short || "Marvel"}`;
       if (done > 0 && done < (EPISODE_COUNTS[item.id] || 0)) reason = "Tienes esta serie empezada";
       else if (intent === "short") reason = `${formatMinutes(estimatedMinutes(item, watched, episodes))} estimados para completarla`;
       else if (intent === "chronological") reason = "Es la siguiente en la cronología seleccionada";
@@ -494,7 +517,7 @@ export function App() {
       else if (intent === "random") reason = `Elegida al azar entre tus líneas favoritas`;
       return { item, reason };
     });
-  }, [eligibleItems, intent, randomSeed, partialSeries, selectedTrackIds, watched, episodes]);
+  }, [eligibleItems, intent, randomSeed, partialSeries, selectedTrackIds, spoilerSafe, watched, episodes]);
 
   const dailyRecommendation = useMemo(() => {
     const candidates = eligibleItems.length ? eligibleItems : releasedItems.filter((item) => !watched.has(item.id) && !ignored.has(item.id));
@@ -569,14 +592,23 @@ export function App() {
       const completedIds=requiredIds.filter((entry)=>watched.has(entry));
       const saved=achievementRecords[id];
       const criteriaMet=requiredIds.length>0&&completedIds.length===requiredIds.length&&requiredIds.every((entry)=>!ITEM_BY_ID.get(entry)?.upcoming);
-      return {id,version,title,description,tier,icon,requiredIds,completedIds,progress:completedIds.length/Math.max(1,requiredIds.length),unlocked:Boolean(saved)||criteriaMet,unlockedAt:saved?.unlockedAt};
+      return {id,version,title,description,tier,icon,requiredIds,completedIds,current:completedIds.length,goal:Math.max(1,requiredIds.length),progress:completedIds.length/Math.max(1,requiredIds.length),coverId:requiredIds[0],unlocked:Boolean(saved)||criteriaMet,unlockedAt:saved?.unlockedAt};
     };
     const metric=(id:string,title:string,description:string,current:number,goal:number,tier:AchievementTier,icon:IconName="trophy",version=1,requiredIds:string[]=[]):Achievement=>{
       const saved=achievementRecords[id];
       const completedIds=requiredIds.filter((entry)=>watched.has(entry));
-      return {id,version,title,description,tier,icon,requiredIds,completedIds,progress:Math.min(1,current/Math.max(1,goal)),unlocked:Boolean(saved)||current>=goal,unlockedAt:saved?.unlockedAt};
+      return {id,version,title,description,tier,icon,requiredIds,completedIds,current,goal:Math.max(1,goal),progress:Math.min(1,current/Math.max(1,goal)),coverId:requiredIds[0],unlocked:Boolean(saved)||current>=goal,unlockedAt:saved?.unlockedAt};
     };
     const sameDayMax=Object.values(history.filter((event)=>event.action==="watched").reduce<Record<string,number>>((days,event)=>{const day=new Date(event.at).toISOString().slice(0,10);days[day]=(days[day]||0)+1;return days;},{})).reduce((max,value)=>Math.max(max,value),0);
+    const watchedMovies=releasedItems.filter((item)=>item.type==="movie"&&watched.has(item.id)).length;
+    const episodeDone=Object.values(episodes).reduce((sum,values)=>sum+values.length,0);
+    const completedSeries=releasedItems.filter((item)=>Boolean(EPISODE_COUNTS[item.id])&&watched.has(item.id)).length;
+    const activeDays=new Set(history.map((event)=>new Date(event.at).toISOString().slice(0,10))).size;
+    const weekendEvents=history.filter((event)=>{const day=new Date(event.at).getDay();return event.action==="watched"&&(day===0||day===6);}).length;
+    const decade=(from:number,to:number)=>releasedItems.filter((item)=>item.releaseValue>=from&&item.releaseValue<to).map((item)=>item.id);
+    const completedCustomList=customLists.some((list)=>list.items.length>0&&list.items.every((id)=>watched.has(id)));
+    let customRouteIds:string[]=[];try{const parsed=JSON.parse(localStorage.getItem("nexus-desktop-custom-route-v1")||"[]");customRouteIds=Array.isArray(parsed)?parsed.filter((id):id is string=>typeof id==="string"):[];}catch{}
+    const completedCustomRoute=customRouteIds.length>0&&customRouteIds.every((id)=>watched.has(id));
     return [
       metric("first-assembly","Primer ensamblaje","Completa tu primer título",watched.size,1,"Bronce","spark"),
       metric("night-marathon","Maratón nocturno","Completa tres títulos en un mismo día",sameDayMax,3,"Bronce","clock"),
@@ -602,7 +634,7 @@ export function App() {
       route("timeline-protector","Protector de la línea temporal","Completa las series y especiales estrenados del UCM",trackIds("series"),"Diamante","clock",2),
 
       route("great-power","Un gran poder","Completa la trilogía de Tobey Maguire",["spiderman-raimi-1","spiderman-raimi-2","spiderman-raimi-3"],"Oro","star"),
-      route("bad-lizard","Somebody’s Been a Bad Lizard","Completa la saga de Andrew Garfield",["amazing-spiderman","amazing-spiderman-2"],"Plata","star"),
+      route("bad-lizard","El asombroso Spider-Man","Completa las dos películas protagonizadas por Andrew Garfield",["amazing-spiderman","amazing-spiderman-2"],"Plata","star"),
       route("back-home","De vuelta a casa","Completa la trilogía de Spider-Man del UCM",["homecoming","far-from-home","no-way-home"],"Oro","home"),
       route("three-spiders","Tres arañas, un destino","Completa las tres rutas live action hasta No Way Home",["spiderman-raimi-1","spiderman-raimi-2","spiderman-raimi-3","amazing-spiderman","amazing-spiderman-2","homecoming","far-from-home","no-way-home"],"Oro","route"),
       route("wear-mask","Cualquiera puede llevar la máscara","Completa las películas estrenadas de Spider-Verse",["spider-verse","across-spider-verse"],"Oro","spark"),
@@ -640,8 +672,85 @@ export function App() {
       route("multiverse-visitors","Visitantes de otros universos","Completa la ruta narrativa hasta No Way Home",dependencyRoute("no-way-home").map((item)=>item.id),"Oro","route"),
       route("ready-doomsday","Preparado para el fin","Completa la ruta requerida de Doomsday cuando se estrene",dependencyRoute("doomsday").map((item)=>item.id),"Diamante","target",2),
       route("battleworld-destiny","Destino: Battleworld","Completa la ruta requerida de Secret Wars cuando se estrene",dependencyRoute("secret-wars").map((item)=>item.id),"Diamante","route",2),
+
+      metric("first-movie","La primera función","Completa tu primera película",watchedMovies,1,"Bronce","film",1,["iron-man"]),
+      metric("first-episode","Solo uno más","Completa tu primer capítulo",episodeDone,1,"Bronce","film",1,["wandavision"]),
+      metric("five-episodes","Próximo episodio","Completa cinco capítulos",episodeDone,5,"Bronce","film",1,["loki-1"]),
+      metric("ten-episodes","¿Quién necesita dormir?","Completa diez capítulos",episodeDone,10,"Plata","clock",1,["daredevil-s1"]),
+      metric("season-closed","Temporada cerrada","Termina una temporada completa",completedSeries,1,"Plata","check",1,["wandavision"]),
+      metric("double-feature","Programa doble","Completa dos títulos el mismo día",sameDayMax,2,"Bronce","film",1,["iron-man-2"]),
+      metric("save-for-later","Para después","Guarda tu primer título en Mi lista",watchlist.size,1,"Bronce","bookmark",1,["homecoming"]),
+      metric("good-taste","Esto sí me gusta","Marca cinco títulos como favoritos",favorites.size,5,"Bronce","star",1,["guardians"]),
+      metric("five-stars","Cinco estrellas","Otorga tu primera calificación máxima",Object.values(ratings).filter((value)=>value===5).length,1,"Bronce","star",1,["endgame"]),
+      metric("margin-notes","Notas al margen","Escribe tu primera nota personal",notesTotal,1,"Bronce","note",1,["winter-soldier"]),
+
+      route("red-room","Sol rojo","Completa el recorrido esencial de Black Widow",["iron-man-2","avengers","winter-soldier","ultron","civil-war","infinity-war","endgame","black-widow"],"Oro","target"),
+      route("always-angry","Siempre estoy enojado","Completa el recorrido esencial de Hulk",["hulk","avengers","ultron","ragnarok","infinity-war","endgame","she-hulk"],"Oro","spark"),
+      route("dont-give-hope","No me des esperanza","Completa el recorrido esencial de Hawkeye",["avengers","ultron","civil-war","endgame","hawkeye"],"Oro","target"),
+      route("on-your-order","A la orden, Capitán","Completa el recorrido de Sam Wilson",["winter-soldier","ultron","civil-war","falcon-winter","brave-new-world"],"Oro","star"),
+      route("maximum-effort","Máximo esfuerzo","Completa todas las películas de Deadpool",["deadpool","deadpool-2","deadpool-wolverine"],"Oro","spark"),
+      route("spirit-vengeance","Espíritu de venganza","Completa las películas de Ghost Rider",["ghost-rider","ghost-rider-2"],"Plata","spark"),
+      route("daywalker","Caminante diurno","Completa la trilogía estrenada de Blade",["blade-1998","blade-2","blade-trinity"],"Oro","target"),
+      route("embrace-chaos","Abraza el caos","Completa Moon Knight y su ruta sobrenatural",["moon-knight","werewolf","agatha"],"Plata","spark"),
+      route("embiggen","Embiggen","Completa la ruta de Ms. Marvel",["ms-marvel","the-marvels"],"Plata","star"),
+      route("ten-rings-legend","La leyenda de los Diez Anillos","Completa Shang-Chi y sus conexiones disponibles",["shang-chi","the-marvels"],"Plata","route"),
+      route("alias-investigations","Alias Investigations","Completa Jessica Jones y sus conexiones",["jessica-jones-s1","defenders-miniseries","jessica-jones-s2","jessica-jones-s3"],"Oro","search"),
+      route("sweet-christmas","Dulce Navidad","Completa Luke Cage y sus conexiones",["luke-cage-s1","defenders-miniseries","luke-cage-s2"],"Oro","spark"),
+
+      route("beautiful-because-lasting","Una cosa no es bella porque dure","Completa el recorrido esencial de Vision",["ultron","civil-war","infinity-war","wandavision","visionquest"],"Oro","spark"),
+      route("end-of-line","Hasta el final de la línea","Completa la historia de Bucky Barnes",["cap-first-avenger","winter-soldier","civil-war","infinity-war","endgame","falcon-winter","thunderbolts"],"Oro","star"),
+      route("boom-looking-for-this","Boom, ¿buscabas esto?","Completa las apariciones principales de War Machine",["iron-man-2","iron-man-3","ultron","civil-war","infinity-war","endgame"],"Oro","spark"),
+      route("avengers-idea","Una idea llamada Vengadores","Completa el recorrido de Nick Fury y la creación de los Avengers",["iron-man","iron-man-2","thor","cap-first-avenger","avengers","captain-marvel","secret-invasion"],"Oro","eye"),
+      route("pocket-vest","Un chaleco con bolsillos","Completa la historia disponible de Yelena Belova",["black-widow","hawkeye","thunderbolts"],"Plata","target"),
+      route("best-hawkeye","La mejor Hawkeye","Completa Hawkeye y el recorrido de Kate Bishop",["hawkeye"],"Plata","target"),
+      route("own-story","Yo controlo mi propia historia","Completa She-Hulk: Defensora de héroes",["she-hulk"],"Plata","spark"),
+      route("agatha-all-along","Fue Agatha todo este tiempo","Completa WandaVision y Agatha All Along",["wandavision","agatha"],"Plata","spark"),
+      route("find-your-voice","Encuentra tu voz","Completa Hawkeye y Echo",["hawkeye","echo"],"Plata","target"),
+      route("need-that-arm","Necesito ese brazo","Completa el recorrido esencial de Rocket",["guardians","guardians-2","infinity-war","endgame","holiday-special","guardians-3"],"Oro","spark"),
+      route("we-are-groot","Somos Groot","Completa las historias principales de Groot",["guardians","guardians-2","infinity-war","endgame","groot-2","holiday-special","guardians-3"],"Oro","star"),
+      route("daughters-thanos","Hijas de Thanos","Completa el recorrido conjunto de Gamora y Nebula",["guardians","guardians-2","infinity-war","endgame","guardians-3"],"Oro","route"),
+
+      route("new-avengers","¿Vengadores nuevos?","Completa los títulos relacionados con los Thunderbolts",["black-widow","falcon-winter","hawkeye","thunderbolts"],"Oro","trophy"),
+      route("seven-thousand-years","Siete mil años","Completa Eternals y sus conexiones disponibles",["eternals"],"Plata","clock"),
+      route("marvels-together","Más alto, más lejos, más rápido, juntas","Completa Captain Marvel, Ms. Marvel y The Marvels",["captain-marvel","ms-marvel","the-marvels"],"Oro","star"),
+      route("next-generation","La siguiente generación","Completa las historias disponibles de los héroes jóvenes",["wandavision","falcon-winter","hawkeye","ms-marvel","quantumania","multiverse-madness"],"Oro","spark"),
+      route("when-night-falls","Cuando cae la noche","Completa la ruta sobrenatural del UCM",["doctor-strange","multiverse-madness","moon-knight","werewolf","agatha"],"Oro","spark"),
+      route("level-seven","Nivel de acceso siete","Completa los títulos esenciales relacionados con S.H.I.E.L.D.",["iron-man","iron-man-2","thor","cap-first-avenger","avengers","winter-soldier","ultron","secret-invasion"],"Oro","eye"),
+      route("heroes-new-york","Héroes de Nueva York","Completa las historias individuales de los Defenders",[...trackIds("defenders")],"Diamante","home",2),
+      route("she-is-not-alone","Ella no está sola","Completa una ruta especial con las heroínas principales del UCM",["black-widow","captain-marvel","wandavision","hawkeye","ms-marvel","she-hulk","wakanda-forever","the-marvels"],"Oro","star"),
+      route("cosmic-limits","Los confines del cosmos","Completa la ruta cósmica del UCM",["thor","guardians","guardians-2","ragnarok","infinity-war","captain-marvel","endgame","eternals","love-thunder","guardians-3","the-marvels"],"Diamante","star",2),
+      route("avengers-all-worlds","Vengadores de todos los mundos","Completa equipos de Avengers live action y animados",["avengers","ultron","infinity-war","endgame","ultimate-avengers","ultimate-avengers-2","avengers-earths-mightiest-heroes","avengers-assemble-series"],"Diamante","trophy",2),
+
+      route("eyes-on-target","Los ojos en el objetivo","Completa el recorrido de Cyclops en animación y live action",["xmen-animated-series","xmen-2000","x2","xmen-last-stand","days-future-past","xmen-apocalypse","dark-phoenix","xmen97-1"],"Oro","target"),
+      route("storm-goddess","Diosa de la tormenta","Completa las historias principales de Storm",["xmen-animated-series","xmen-2000","x2","xmen-last-stand","days-future-past","xmen-apocalypse","dark-phoenix","xmen97-1"],"Oro","spark"),
+      route("fire-life-incarnate","Fuego y vida encarnados","Completa el recorrido de Jean Grey y Phoenix",["xmen-animated-series","xmen-2000","x2","xmen-last-stand","xmen-apocalypse","dark-phoenix","xmen97-1"],"Oro","spark"),
+      route("sugar-rogue","Sugar","Completa el recorrido de Rogue",["xmen-animated-series","xmen-2000","x2","xmen-last-stand","xmen97-1"],"Oro","star"),
+      route("name-is-gambit","El nombre es Gambit","Completa las apariciones principales de Gambit",["xmen-animated-series","xmen97-1","deadpool-wolverine"],"Oro","spark"),
+      route("peace-never-option","La paz nunca fue una opción","Completa el recorrido esencial de Magneto",["xmen-animated-series","xmen-2000","x2","xmen-last-stand","xmen-first-class","days-future-past","xmen-apocalypse","dark-phoenix","xmen97-1"],"Diamante","route",2),
+      route("hope-coexistence","La esperanza de coexistir","Completa las historias principales de Charles Xavier",["xmen-animated-series","xmen-2000","x2","xmen-last-stand","xmen-first-class","days-future-past","xmen-apocalypse","logan","xmen97-1"],"Diamante","eye",2),
+      route("the-herald","El heraldo","Completa las apariciones disponibles de Silver Surfer",["silver-surfer"],"Plata","spark"),
+      route("flame-on","¡Llamas a mí!","Completa las diferentes versiones cinematográficas de Human Torch",["fantastic-four-2005","silver-surfer","fantastic-four-2015","fantastic-four"],"Oro","spark"),
+      route("red-sai","La sai roja","Completa las historias de Elektra",["daredevil-2003","elektra-2005","daredevil-s2","defenders-miniseries"],"Oro","target"),
+
+      route("knows-fear","Quien conoce el miedo","Completa Werewolf by Night y la ruta de Man-Thing",["werewolf"],"Plata","spark"),
+      route("protector-kun-lun","Protector de K’un-Lun","Completa Iron Fist y The Defenders",["iron-fist-s1","defenders-miniseries","iron-fist-s2"],"Oro","spark"),
+      route("man-without-fear","El hombre sin miedo","Completa toda la ruta disponible de Daredevil",releasedIds.filter((id)=>id.includes("daredevil")),"Diamante","target",2),
+      route("king-of-city","El rey de la ciudad","Completa las historias principales relacionadas con Kingpin",["daredevil-s1","daredevil-s3","hawkeye","echo","daredevil-ba-1"],"Oro","trophy"),
+      route("punishment-served","Castigo cumplido","Completa todas las historias disponibles de Punisher",releasedIds.filter((id)=>id.includes("punisher")),"Oro","target"),
+
+      route("neon-days","Días de neón","Completa una ruta de los años 90",decade(1990,2000),"Oro","clock"),
+      metric("before-mcu","Antes del UCM","Completa diez títulos estrenados en los 2000",decade(2000,2010).filter((id)=>watched.has(id)).length,10,"Oro","film",1,decade(2000,2010)),
+      metric("assembly-decade","La década del ensamblaje","Completa veinte títulos estrenados en los 2010",decade(2010,2020).filter((id)=>watched.has(id)).length,20,"Oro","trophy",1,decade(2010,2020)),
+      metric("after-blip","Después del Blip","Completa veinte títulos estrenados en los 2020",decade(2020,2030).filter((id)=>watched.has(id)).length,20,"Oro","route",1,decade(2020,2030)),
+      metric("through-time","A través del tiempo","Completa al menos un título de cuatro décadas diferentes",[decade(1990,2000),decade(2000,2010),decade(2010,2020),decade(2020,2030)].filter((ids)=>ids.some((id)=>watched.has(id))).length,4,"Diamante","clock"),
+
+      metric("zero-list","Lista en cero","Completa todos los títulos de una lista propia",completedCustomList?1:0,1,"Oro","bookmark"),
+      metric("three-days-realities","Tres días, tres realidades","Registra actividad durante tres días diferentes",activeDays,3,"Plata","calendar"),
+      metric("heroic-weekend","Fin de semana heroico","Completa tres títulos durante fines de semana",weekendEvents,3,"Plata","calendar"),
+      metric("my-continuity","Mi continuidad","Termina un orden personalizado",completedCustomRoute?1:0,1,"Oro","shuffle",1,customRouteIds),
+      metric("under-spell","Bajo el hechizo","Completa cinco títulos manteniendo el modo protegido",spoilerSafe?Math.min(5,watched.size):0,5,"Plata","eye"),
     ];
-  }, [achievementActivityVersion, achievementRecords, customLists.length, episodes, history, notes, ratings, releasedItems, rewatches, spoilerSafe, watched]);
+  }, [achievementActivityVersion, achievementRecords, customLists, episodes, favorites, history, notes, ratings, releasedItems, rewatches, spoilerSafe, watched, watchlist]);
   const labelLayout = useMemo(() => {
     const result = new Map<string, { below: boolean; offset: number; shift: number; leaderLength: number; leaderAngle: number }>();
     // Keep collision packing in lockstep with the final card widths in styles.css.
@@ -816,7 +925,7 @@ export function App() {
       } else if (!globalSearchOpen && (event.key === "+" || event.key === "=")) changeZoom(zoom + 0.1);
       else if (!globalSearchOpen && event.key === "-") changeZoom(zoom - 0.1);
       else if (event.key.toLowerCase() === "f" && document.activeElement?.tagName !== "INPUT") fitMap();
-      else if (event.key === "Escape") { setSelected(null); setDetailPinned(false); setQuery(""); setGlobalSearchOpen(false); setSettingsOpen(false); }
+      else if (event.key === "Escape") { setSelected(null); setDetailPinned(false); setQuery(""); setGlobalSearchOpen(false); setSettingsOpen(false); setAccountMenuOpen(false); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -849,7 +958,12 @@ export function App() {
     const previousEpisodes = [...(episodes[item.id] || [])];
     const previousDate = watchedDates[item.id];
     touchActivity(item, willWatch ? "watched" : "unwatched");
-    if (willWatch) setWatchedDates((current) => ({ ...current, [item.id]: current[item.id] || new Date().toISOString().slice(0, 10) }));
+    setWatchedDates((current) => {
+      const next = { ...current };
+      if (willWatch) next[item.id] = current[item.id] || new Date().toISOString().slice(0, 10);
+      else delete next[item.id];
+      return next;
+    });
     setWatched((current) => {
       const next = new Set(current);
       if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
@@ -879,7 +993,8 @@ export function App() {
       const values = [...existing].sort((a, b) => a - b);
       setWatched((seen) => {
         const next = new Set(seen);
-        if (values.length === total) { next.add(item.id); setWatchedDates((dates) => ({ ...dates, [item.id]: dates[item.id] || new Date().toISOString().slice(0, 10) })); } else next.delete(item.id);
+        if (values.length === total) { next.add(item.id); setWatchedDates((dates) => ({ ...dates, [item.id]: dates[item.id] || new Date().toISOString().slice(0, 10) })); }
+        else { next.delete(item.id); setWatchedDates((dates)=>{const nextDates={...dates};delete nextDates[item.id];return nextDates;}); }
         return next;
       });
       return { ...current, [item.id]: values };
@@ -1060,7 +1175,7 @@ export function App() {
 
   return (
     <main className="desktop-shell">
-      <div className="native-titlebar"><div className="titlebar-brand"><span>N</span><strong>NEXUS</strong><small>MAPA DEL MULTIVERSO</small></div></div>
+      <div className="native-titlebar"><div className="titlebar-brand"><span>N</span><strong>NEXUS</strong><small>MAPA DEL MULTIVERSO</small></div><div className="titlebar-actions"><div className="nexus-mode-tabs" role="group" aria-label="Nivel de spoilers"><button className={!spoilerSafe?"active complete":""} onClick={()=>setSpoilerSafe(false)}><Icon name="eye"/><span><strong>Universo completo</strong><small>Conexiones visibles</small></span></button><button className={spoilerSafe?"active protected":""} onClick={()=>setSpoilerSafe(true)}><Icon name="spark"/><span><strong>Ruta protegida</strong><small>Sin spoilers</small></span></button></div><div className="account-menu-wrap"><button className="titlebar-avatar" onClick={()=>setAccountMenuOpen((value)=>!value)} aria-expanded={accountMenuOpen} aria-label="Abrir menú personal">{activeProfile?.avatar||"N"}</button>{accountMenuOpen&&<div className="account-quick-menu"><div><span>{activeProfile?.avatar||"N"}</span><p><strong>{activeProfile?.name||"Mi cuenta"}</strong><small>Preferencias y sincronización</small></p></div><button onClick={()=>{setAccountMenuOpen(false);setCloudOpen(true)}}><Icon name="user"/>Cuenta y sincronización</button><button onClick={()=>{setAccountMenuOpen(false);setSettingsOpen(true)}}><Icon name="settings"/>Apariencia y acceso</button></div>}</div></div></div>
       <aside className="map-sidebar">
         <nav className="app-nav" aria-label="Navegación principal">
           <span className="nav-group-label">Principal</span>
@@ -1092,18 +1207,10 @@ export function App() {
             const done = items.filter((item) => watched.has(item.id)).length;
             return <button key={track.id} className={activeTrack === track.id ? "active" : ""} onClick={() => { setActiveTrack(track.id); const first = items[0]; if (first) centerItem(first, false); }}><span className="track-swatch" style={{ "--track": track.color } as React.CSSProperties}/><strong>{track.short}</strong><small>{done}/{items.length}</small></button>;
           })}
-        </nav></> : <div className="sidebar-overview">
-          <span>Tu configuración</span>
-          <div><strong>{favoriteTracks.size || TRACKS.length}</strong><small>líneas activas</small></div>
-          <div><strong>{watchlist.size}</strong><small>en Mi lista</small></div>
-          <div><strong>{ignored.size}</strong><small>descartados</small></div>
-          <button className={spoilerSafe ? "enabled" : ""} onClick={() => setSpoilerSafe((value) => !value)}><Icon name="eye"/><span><strong>Protección de spoilers</strong><small>{spoilerSafe ? "Activada" : "Desactivada"}</small></span></button>
-        </div>}
+        </nav></> : null}
 
         <div className="sidebar-tools">
-          <button className="cloud-sidebar-button" onClick={() => setCloudOpen(true)}><Icon name="user"/>Cuenta y sincronización</button>
           <button onClick={() => setGlobalSearchOpen(true)}><Icon name="search"/>Búsqueda global <kbd>Ctrl K</kbd></button>
-          <button onClick={() => setSettingsOpen(true)}><Icon name="settings"/>Apariencia y acceso</button>
           <a className="tmdb-credit" href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">Arte de títulos proporcionado por TMDB</a>
         </div>
         <div className="keyboard-hint"><kbd>Ctrl</kbd><kbd>K</kbd><span>buscar todo</span><kbd>Alt</kbd><kbd>1–9</kbd><span>secciones</span></div>
@@ -1222,7 +1329,7 @@ function GlobalSearch({ query, setQuery, hits, activeIndex, onActive, onOpen, on
 }
 
 function PreferencesPanel({ value, onChange, onClose }: { value:Preferences; onChange:React.Dispatch<React.SetStateAction<Preferences>>; onClose:()=>void }) {
-  const set = <K extends keyof Preferences>(key:K, next:Preferences[K]) => onChange((current)=>({ ...current,[key]:next }));
+  const set = <K extends keyof Preferences>(key:K, next:Preferences[K]) => { if(key!=="achievements") onChange((current)=>({ ...current,[key]:next })); };
   return <div className="preferences-layer" onMouseDown={(event)=>{ if(event.target===event.currentTarget) onClose(); }}><aside className="preferences-panel" role="dialog" aria-modal="true" aria-label="Apariencia y accesibilidad"><header><div><span className="dash-eyebrow">Personalización</span><h2>Apariencia y acceso</h2></div><button onClick={onClose} aria-label="Cerrar"><Icon name="close"/></button></header><div className="preference-scroll"><section><h3>Color principal</h3><div className="accent-options">{(["red","violet","cyan"] as const).map((accent)=><button key={accent} className={`${accent} ${value.accent===accent ? "active":""}`} onClick={()=>set("accent",accent)}><i/>{accent==="red"?"Nexus":accent==="violet"?"Multiverso":"Cósmico"}</button>)}</div><label><span>Intensidad del color <b>{value.intensity}%</b></span><input type="range" min="35" max="100" value={value.intensity} onChange={(event)=>set("intensity",Number(event.target.value))}/></label></section><section><h3>Densidad y tarjetas</h3><div className="segmented">{(["comfortable","compact"] as const).map((density)=><button key={density} className={value.density===density?"active":""} onClick={()=>set("density",density)}>{density==="comfortable"?"Cómoda":"Compacta"}</button>)}</div><div className="segmented three">{(["small","medium","large"] as const).map((size)=><button key={size} className={value.cardSize===size?"active":""} onClick={()=>set("cardSize",size)}>{size==="small"?"Pequeña":size==="medium"?"Mediana":"Grande"}</button>)}</div></section><section><h3>Lectura y accesibilidad</h3><label><span>Tamaño de texto <b>{value.fontScale}%</b></span><input type="range" min="100" max="135" step="5" value={Math.max(100,value.fontScale)} onChange={(event)=>set("fontScale",Number(event.target.value))}/></label><div className="text-size-presets" aria-label="Tamaños de texto recomendados"><button className={value.fontScale===100?"active":""} onClick={()=>set("fontScale",100)}>Normal</button><button className={value.fontScale===115?"active":""} onClick={()=>set("fontScale",115)}>Grande</button><button className={value.fontScale===130?"active":""} onClick={()=>set("fontScale",130)}>Muy grande</button></div><button className={`switch-row ${value.highContrast?"active":""}`} onClick={()=>set("highContrast",!value.highContrast)}><span><strong>Alto contraste</strong><small>Refuerza bordes, texto y controles</small></span><i/></button><button className={`switch-row ${value.reduceMotion?"active":""}`} onClick={()=>set("reduceMotion",!value.reduceMotion)}><span><strong>Reducir animaciones</strong><small>Evita desplazamientos y efectos decorativos</small></span><i/></button><button className={`switch-row ${value.achievements?"active":""}`} onClick={()=>set("achievements",!value.achievements)}><span><strong>Logros opcionales</strong><small>Muestra progreso y celebraciones</small></span><i/></button></section><section className="shortcut-list"><h3>Atajos</h3><p><kbd>Ctrl K</kbd><span>Búsqueda global</span></p><p><kbd>Alt 1–7</kbd><span>Cambiar de sección</span></p><p><kbd>Esc</kbd><span>Cerrar paneles</span></p><p><kbd>Tab</kbd><span>Recorrer controles</span></p></section></div><footer><button onClick={()=>onChange(DEFAULT_PREFERENCES)}>Restablecer</button><button onClick={onClose}>Guardar y cerrar</button></footer></aside></div>;
 }
 
@@ -1262,7 +1369,6 @@ function Dashboard(props: DashboardProps) {
   return <section className="dashboard-workspace">
     <header className="dashboard-toolbar">
       <div><span className="dash-eyebrow">Tu centro de control</span><h1>¿Qué quieres ver hoy?</h1></div>
-      <button className={`spoiler-toggle ${props.spoilerSafe ? "enabled" : ""}`} onClick={props.onToggleSpoilers}><Icon name="eye"/><span><strong>Spoilers</strong><small>{props.spoilerSafe ? "Protegidos" : "Visibles"}</small></span></button>
     </header>
     <div className="dashboard-scroll">
       <div className="dashboard-grid-top">
@@ -1527,34 +1633,64 @@ function MarvelCalendar({ onOpenDetail, notify }: { onOpenDetail: (item: MapItem
   </section>;
 }
 
-type AchievementFilter = "all" | "progress" | "unlocked";
+type AchievementFilter = "all" | "progress" | "unlocked" | "characters" | "universes" | "activity" | "diamond";
+
+const CHARACTER_ACHIEVEMENT_IDS = new Set([
+  "iron-trilogy","on-your-left","still-worthy","size-problems","higher-further","wakanda-forever","bargain","galaxy-misfits","what-is-grief","glorious-purpose",
+  "red-room","always-angry","dont-give-hope","on-your-order","maximum-effort","spirit-vengeance","daywalker","embrace-chaos","embiggen","ten-rings-legend","alias-investigations","sweet-christmas",
+  "beautiful-because-lasting","end-of-line","boom-looking-for-this","avengers-idea","pocket-vest","best-hawkeye","own-story","agatha-all-along","find-your-voice","need-that-arm","we-are-groot","daughters-thanos",
+  "new-avengers","seven-thousand-years","marvels-together","next-generation","when-night-falls","level-seven","heroes-new-york","she-is-not-alone","cosmic-limits","avengers-all-worlds",
+  "eyes-on-target","storm-goddess","fire-life-incarnate","sugar-rogue","name-is-gambit","peace-never-option","hope-coexistence","the-herald","flame-on","red-sai","knows-fear","protector-kun-lun","man-without-fear","king-of-city","punishment-served",
+]);
+const ACTIVITY_ACHIEVEMENT_IDS = new Set(["first-assembly","night-marathon","archive-opens","showrunner","code-between-worlds","together-now","multiverse-critic","one-more-time","watcher-notes","reality-curator","sorcerer-oath","first-movie","first-episode","five-episodes","ten-episodes","season-closed","double-feature","save-for-later","good-taste","five-stars","margin-notes","zero-list","three-days-realities","heroic-weekend","my-continuity","under-spell"]);
+const ERA_ACHIEVEMENT_IDS = new Set(["neon-days","before-mcu","assembly-decade","after-blip","through-time"]);
 
 function achievementGroup(id:string) {
-  if (["first-assembly","night-marathon","archive-opens","phase-traveler","one-reality","half-multiverse","hundred-counting","everything-connected"].includes(id)) return "Progreso general";
+  if (ACTIVITY_ACHIEVEMENT_IDS.has(id)) return "Actividad personal";
+  if (ERA_ACHIEVEMENT_IDS.has(id)) return "Eras y décadas";
   if (["great-power","bad-lizard","back-home","three-spiders","wear-mask","always-spectacular","animated-neighbor","web-destiny"].includes(id)) return "Spider-Man";
-  if (["to-me-xmen","future-reunited","best-at-what-i-do","mutant-proud","clobbering-time","first-family","legacy-keepers"].includes(id)) return "X-Men y Fantastic Four";
+  if (["to-me-xmen","future-reunited","best-at-what-i-do","mutant-proud","clobbering-time","first-family","legacy-keepers"].includes(id)||[...CHARACTER_ACHIEVEMENT_IDS].includes(id)&&["eyes-on-target","storm-goddess","fire-life-incarnate","sugar-rogue","name-is-gambit","peace-never-option","hope-coexistence","the-herald","flame-on","red-sai"].includes(id)) return "Mutantes y legados";
+  if (CHARACTER_ACHIEVEMENT_IDS.has(id)) return "Personajes y equipos";
   if (["hells-kitchen-devil","street-heroes","one-batch","we-are-venom","symbiote-web","watcher-saw-all","animated-mightiest","every-frame"].includes(id)) return "Legados y animación";
-  if (["showrunner","code-between-worlds","together-now","multiverse-critic","one-more-time","watcher-notes","reality-curator","multiverse-museum","sorcerer-oath"].includes(id)) return "Maratones y actividad";
   if (["portals-open","multiverse-visitors","ready-doomsday","battleworld-destiny"].includes(id)) return "Convergencias";
+  if (["phase-traveler","one-reality","half-multiverse","hundred-counting","everything-connected","avengers-assembled","soul-price","timeline-protector","multiverse-museum"].includes(id)) return "Sagas y universos";
   return "UCM y personajes";
+}
+
+function achievementVisual(achievement:Achievement) {
+  const item=ITEM_BY_ID.get(achievement.coverId||achievement.requiredIds[0]||"");
+  return {item,thumb:item?artworkFor(item,"card"):"./artwork/cosmic-hero-v1.webp",hero:item?artworkFor(item,"hero"):"./artwork/cosmic-hero-v1.webp"};
 }
 
 function AchievementsView({achievements,watched,onOpenRoute}:{achievements:Achievement[];watched:Set<string>;onOpenRoute:(achievement:Achievement)=>void}) {
   const [filter,setFilter]=useState<AchievementFilter>("all");
   const [group,setGroup]=useState("Todos");
+  const [search,setSearch]=useState("");
+  const [sortMode,setSortMode]=useState<"progress"|"alphabetical"|"rarity">("progress");
+  const [spoilerSafe,setAchievementSpoilerSafe]=useState(()=>localStorage.getItem(SPOILERS_KEY)!=="false");
   const [selectedAchievement,setSelectedAchievement]=useState<Achievement|null>(null);
+  useEffect(()=>{const refresh=()=>setAchievementSpoilerSafe(localStorage.getItem(SPOILERS_KEY)!=="false");window.addEventListener("nexus:local-change",refresh);return()=>window.removeEventListener("nexus:local-change",refresh);},[]);
   const unlocked=achievements.filter((entry)=>entry.unlocked).length;
   const groups=["Todos",...new Set(achievements.map((entry)=>achievementGroup(entry.id)))];
-  const visible=achievements.filter((entry)=>(filter==="all"||filter==="unlocked"&&entry.unlocked||filter==="progress"&&!entry.unlocked)&&(group==="Todos"||achievementGroup(entry.id)===group));
+  const matchesFilter=(entry:Achievement)=>filter==="all"||filter==="unlocked"&&entry.unlocked||filter==="progress"&&!entry.unlocked||filter==="characters"&&["Personajes y equipos","Spider-Man","Mutantes y legados","UCM y personajes"].includes(achievementGroup(entry.id))||filter==="universes"&&["Sagas y universos","Convergencias","Eras y décadas"].includes(achievementGroup(entry.id))||filter==="activity"&&achievementGroup(entry.id)==="Actividad personal"||filter==="diamond"&&entry.tier==="Diamante";
+  const tierRank:Record<AchievementTier,number>={Bronce:1,Plata:2,Oro:3,Vibranium:4,Diamante:5};
+  const visible=achievements.filter((entry)=>matchesFilter(entry)&&(group==="Todos"||achievementGroup(entry.id)===group)&&(!search.trim()||normalize([entry.title,entry.description,achievementGroup(entry.id),entry.tier,...entry.requiredIds.map((id)=>ITEM_BY_ID.get(id)?.title||id)].join(" ")).includes(normalize(search)))).sort((a,b)=>sortMode==="alphabetical"?a.title.localeCompare(b.title,"es"):sortMode==="rarity"?tierRank[b.tier]-tierRank[a.tier]||b.progress-a.progress:Number(b.unlocked)-Number(a.unlocked)||b.progress-a.progress||a.title.localeCompare(b.title,"es"));
   const next=[...achievements].filter((entry)=>!entry.unlocked).sort((a,b)=>b.progress-a.progress)[0];
+  const near=achievements.filter((entry)=>!entry.unlocked&&entry.progress>0).sort((a,b)=>b.progress-a.progress).slice(0,5);
   return <section className="dashboard-workspace achievements-workspace">
-    <header className="dashboard-toolbar artwork-toolbar achievements-hero" style={{"--hero":`url(./artwork/cosmic-hero-v1.webp)`} as React.CSSProperties}><div><span className="dash-eyebrow">Tu sala de trofeos</span><h1>Logros del multiverso</h1><p>Retos concretos, progreso comprobable y rutas directas hacia cada insignia.</p></div><div className="achievement-hero-count"><strong>{unlocked}</strong><span><b>de {achievements.length}</b><small>desbloqueados</small></span></div></header>
+    <header className="dashboard-toolbar artwork-toolbar achievements-hero" style={{"--hero":`url(./artwork/cosmic-hero-v1.webp)`} as React.CSSProperties}><div><span className="dash-eyebrow">Tu sala de trofeos</span><h1>Logros del multiverso</h1><p>Encuentra retos por personaje, equipo, saga o actividad.</p></div><div className="achievement-hero-count"><strong>{unlocked}</strong><span><b>de {achievements.length}</b><small>desbloqueados</small></span></div></header>
     <div className="dashboard-scroll achievements-scroll">
-      {next&&<section className="next-achievement" data-tier={next.tier.toLowerCase()}><span><Icon name={next.icon} size={30}/></span><div><small>Siguiente insignia · {next.tier}</small><h2>{next.title}</h2><p>{next.description}</p><i><b style={{width:`${next.progress*100}%`}}/></i></div><strong>{Math.round(next.progress*100)}%</strong><button onClick={()=>setSelectedAchievement(next)}>Ver requisitos</button></section>}
-      <div className="achievement-toolbar"><div>{([['all','Todos'],['progress','En progreso'],['unlocked','Desbloqueados']] as Array<[AchievementFilter,string]>).map(([id,label])=><button key={id} className={filter===id?'active':''} onClick={()=>setFilter(id)}>{label}</button>)}</div><label><span className="sr-only">Categoría</span><select value={group} onChange={(event)=>setGroup(event.target.value)}>{groups.map((entry)=><option key={entry}>{entry}</option>)}</select></label></div>
-      {visible.length?<div className="achievement-catalog">{visible.map((achievement)=><button type="button" key={achievement.id} data-tier={achievement.tier.toLowerCase()} className={achievement.unlocked?"unlocked":""} onClick={()=>setSelectedAchievement(achievement)}><span><Icon name={achievement.icon}/></span><div><small>{achievementGroup(achievement.id)} · {achievement.tier}</small><strong>{achievement.title}</strong><p>{achievement.description}</p><i><b style={{width:`${achievement.progress*100}%`}}/></i><em>{achievement.unlocked?'Desbloqueado':`${Math.round(achievement.progress*100)}% completado`}</em></div>{achievement.unlocked?<Icon name="check"/>:<Icon name="chevron"/>}</button>)}</div>:<div className="list-empty"><Icon name="trophy" size={36}/><h2>No hay logros en este filtro</h2><p>Prueba otra categoría o vuelve a mostrar todos.</p></div>}
+      {next&&<section className="next-achievement" data-tier={next.tier.toLowerCase()} style={{"--achievement-art":`url(${achievementVisual(next).hero})`} as React.CSSProperties}><span><Icon name={next.icon} size={30}/></span><div><small>Siguiente insignia · {next.tier}</small><h2>{next.title}</h2><p>{next.description}</p><i><b style={{width:`${next.progress*100}%`}}/></i></div><strong>{next.current}/{next.goal}</strong><button onClick={()=>setSelectedAchievement(next)}>Ver requisitos</button></section>}
+      {near.length>0&&<section className="achievement-near"><div><span className="dash-eyebrow">Casi completados</span><h2>Lo tienes cerca</h2></div><div>{near.map((entry)=><button key={entry.id} onClick={()=>setSelectedAchievement(entry)} style={{"--achievement-art":`url(${achievementVisual(entry).thumb})`} as React.CSSProperties}><span>{Math.round(entry.progress*100)}%</span><strong>{entry.title}</strong></button>)}</div></section>}
+      <section className="achievement-browser">
+        <div className="achievement-search"><Icon name="search"/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Buscar personaje, equipo, saga o logro…"/>{search&&<button onClick={()=>setSearch("")} aria-label="Limpiar"><Icon name="close"/></button>}</div>
+        <div className="achievement-toolbar"><div>{([['all','Todos'],['progress','En progreso'],['unlocked','Obtenidos'],['characters','Personajes'],['universes','Universos'],['activity','Actividad'],['diamond','Diamante']] as Array<[AchievementFilter,string]>).map(([id,label])=><button key={id} className={filter===id?'active':''} onClick={()=>setFilter(id)}>{label}</button>)}</div></div>
+        <div className="achievement-group-rail">{groups.map((entry)=>{const sample=achievements.find((achievement)=>entry==="Todos"||achievementGroup(achievement.id)===entry);return <button key={entry} className={group===entry?"active":""} onClick={()=>setGroup(entry)} style={{"--achievement-art":`url(${sample?achievementVisual(sample).thumb:"./artwork/cosmic-hero-v1.webp"})`} as React.CSSProperties}><span>{entry}</span><small>{entry==="Todos"?achievements.length:achievements.filter((achievement)=>achievementGroup(achievement.id)===entry).length}</small></button>})}</div>
+      </section>
+      <div className="achievement-result-count"><span><strong>{visible.length} logros</strong><small>{search?`Resultados para “${search}”`:group==="Todos"?"Explora todo el archivo":group}</small></span><label><span className="sr-only">Ordenar logros</span><select value={sortMode} onChange={(event)=>setSortMode(event.target.value as typeof sortMode)}><option value="progress">Más cercanos</option><option value="alphabetical">A–Z</option><option value="rarity">Mayor rareza</option></select></label></div>
+      {visible.length?<div className="achievement-catalog">{visible.map((achievement)=>{const visual=achievementVisual(achievement);return <button type="button" key={achievement.id} data-tier={achievement.tier.toLowerCase()} className={achievement.unlocked?"unlocked":""} onClick={()=>setSelectedAchievement(achievement)}><span className="achievement-thumb" style={{backgroundImage:`url(${visual.thumb})`}}><i><Icon name={achievement.icon}/></i></span><div><small>{achievementGroup(achievement.id)} · {achievement.tier}</small><strong>{achievement.title}</strong><p>{achievement.description}</p><i><b style={{width:`${achievement.progress*100}%`}}/></i><em>{achievement.unlocked?'Desbloqueado':`${achievement.current}/${achievement.goal} · ${Math.round(achievement.progress*100)}%`}</em></div>{achievement.unlocked?<Icon name="check"/>:<Icon name="chevron"/>}</button>})}</div>:<div className="list-empty"><Icon name="trophy" size={36}/><h2>No hay logros en este filtro</h2><p>Prueba otra categoría, búsqueda o vuelve a mostrar todos.</p></div>}
     </div>
-    {selectedAchievement&&<AchievementDetail achievement={selectedAchievement} watched={watched} onClose={()=>setSelectedAchievement(null)} onOpenRoute={()=>{onOpenRoute(selectedAchievement);setSelectedAchievement(null);}}/>}
+    {selectedAchievement&&<AchievementDetail achievement={selectedAchievement} watched={watched} spoilerSafe={spoilerSafe} onClose={()=>setSelectedAchievement(null)} onOpenRoute={()=>{onOpenRoute(selectedAchievement);setSelectedAchievement(null);}}/>}
   </section>;
 }
 
@@ -1581,14 +1717,17 @@ function MyProfileView({ profile, watched, ratings, favorites, history, rewatche
   </section>;
 }
 
-function AchievementDetail({achievement,watched,onClose,onOpenRoute}:{achievement:Achievement;watched:Set<string>;onClose:()=>void;onOpenRoute:()=>void}){
+function AchievementDetail({achievement,watched,spoilerSafe=false,onClose,onOpenRoute}:{achievement:Achievement;watched:Set<string>;spoilerSafe?:boolean;onClose:()=>void;onOpenRoute:()=>void}){
   const required=achievement.requiredIds.map((id)=>ITEM_BY_ID.get(id)).filter((item):item is MapItem=>Boolean(item));
+  const [revealRequirements,setRevealRequirements]=useState(!spoilerSafe);
+  const visual=achievementVisual(achievement);
   useEffect(()=>{const close=(event:KeyboardEvent)=>{if(event.key==="Escape")onClose();};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[onClose]);
   return <div className="achievement-detail-layer" role="dialog" aria-modal="true" aria-label={`Logro ${achievement.title}`} onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose();}}>
     <section className="achievement-detail" data-tier={achievement.tier.toLowerCase()}>
-      <header><span><Icon name={achievement.icon} size={30}/></span><div><small>{achievement.tier} · versión {achievement.version}</small><h2>{achievement.title}</h2><p>{achievement.description}</p></div><button onClick={onClose} aria-label="Cerrar"><Icon name="close"/></button></header>
-      <div className="achievement-detail-progress"><span><strong>{Math.round(achievement.progress*100)}%</strong><small>{achievement.completedIds.length}/{achievement.requiredIds.length||1} requisitos</small></span><i><b style={{width:`${achievement.progress*100}%`}}/></i>{achievement.unlockedAt&&<p>Obtenido el {new Intl.DateTimeFormat("es-PE",{dateStyle:"long"}).format(new Date(achievement.unlockedAt))}</p>}<p>Rareza global: se calculará con perfiles públicos cuando la comunidad esté activa.</p></div>
-      {required.length>0?<div className="achievement-requirements"><h3>Títulos necesarios</h3>{required.map((item)=><article key={item.id} className={watched.has(item.id)?"complete":"pending"}><img src={posterFor(item,"thumb")} alt="" loading="lazy"/><span><small>{watched.has(item.id)?"Completado":"Pendiente"}</small><strong>{item.title}</strong><p>{item.date} · {trackForId(item.trackId)?.short}</p></span>{watched.has(item.id)?<Icon name="check"/>:<Icon name="clock"/>}</article>)}</div>:<p className="achievement-general-note">Este logro avanza con tu actividad general y no necesita una lista concreta de títulos.</p>}
+      <div className="achievement-detail-art" style={{backgroundImage:`linear-gradient(90deg,rgba(8,10,14,.18),rgba(8,10,14,.78)),url(${visual.hero})`}}><span><Icon name={achievement.icon} size={30}/></span><button onClick={onClose} aria-label="Cerrar"><Icon name="close"/></button></div>
+      <header><span><Icon name={achievement.icon} size={30}/></span><div><small>{achievementGroup(achievement.id)} · {achievement.tier}</small><h2>{achievement.title}</h2><p>{achievement.description}</p></div></header>
+      <div className="achievement-detail-progress"><span><strong>{Math.round(achievement.progress*100)}%</strong><small>{achievement.current}/{achievement.goal} requisitos</small></span><i><b style={{width:`${achievement.progress*100}%`}}/></i>{achievement.unlockedAt&&<p>Obtenido el {new Intl.DateTimeFormat("es-PE",{dateStyle:"long"}).format(new Date(achievement.unlockedAt))}</p>}<p>Rareza global: se calculará con perfiles públicos cuando la comunidad esté activa.</p></div>
+      {required.length>0?<div className="achievement-requirements"><div className="achievement-requirement-heading"><h3>Títulos necesarios</h3>{spoilerSafe&&!revealRequirements&&<button onClick={()=>setRevealRequirements(true)}><Icon name="eye"/>Revelar pendientes</button>}</div>{required.map((item)=>{const hidden=spoilerSafe&&!revealRequirements&&!watched.has(item.id);return <article key={item.id} className={`${watched.has(item.id)?"complete":"pending"} ${hidden?"spoiler-hidden":""}`}><img src={hidden?visual.thumb:posterFor(item,"thumb")} alt="" loading="lazy"/><span><small>{watched.has(item.id)?"Completado":hidden?"Requisito protegido":"Pendiente"}</small><strong>{hidden?"Título oculto":item.title}</strong><p>{hidden?"Completa la ruta para revelarlo":`${item.date} · ${trackForId(item.trackId)?.short}`}</p></span>{watched.has(item.id)?<Icon name="check"/>:<Icon name="clock"/>}</article>})}</div>:<p className="achievement-general-note">Este logro avanza con tu actividad general y no necesita una lista concreta de títulos.</p>}
       <footer><button onClick={onClose}>Volver</button><button onClick={onOpenRoute} disabled={!required.length}><Icon name="route"/>Ver ruta en el mapa</button></footer>
     </section>
   </div>;

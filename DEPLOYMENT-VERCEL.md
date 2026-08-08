@@ -45,7 +45,7 @@ npx supabase db push
 npx supabase functions deploy delete-account
 ```
 
-El `project ref` aparece en **Project Settings → General**. Se aplicarán, en orden, `supabase/migrations/202608080001_nexus_cloud.sql` y `supabase/migrations/202608080002_catalog_and_event_sync.sql`. La segunda crea el catálogo normalizado y sus claves foráneas.
+El `project ref` aparece en **Project Settings → General**. Se aplicarán, en orden, las tres migraciones de `supabase/migrations`. La segunda crea el catálogo normalizado y sus claves foráneas; `202608080003_progress_tombstones.sql` permite sincronizar correctamente películas, series y capítulos desmarcados.
 
 Alternativa: abre **SQL Editor**, copia la migración completa y ejecútala. La función `delete-account` sí debe publicarse con la CLI para que la eliminación total de cuentas funcione.
 

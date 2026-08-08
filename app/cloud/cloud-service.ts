@@ -344,10 +344,12 @@ export async function syncStructuredProfile(profileId: string) {
   const watchedDates = storedRecord<string>(NEXUS_KEYS.watchedDates);
   const rewatches = storedRecord<number>(NEXUS_KEYS.rewatches);
   const episodes = storedRecord<number[]>(NEXUS_KEYS.episodes);
+  const activity = storedRecord<number>(NEXUS_KEYS.activity);
+  const deviceId = getDeviceId();
   const titleIds = new Set<string>([
     ...watched, ...watchlist, ...ignored, ...favorites,
     ...Object.keys(ratings), ...Object.keys(notes), ...Object.keys(watchedDates),
-    ...Object.keys(rewatches), ...Object.keys(episodes),
+    ...Object.keys(rewatches), ...Object.keys(episodes), ...Object.keys(activity),
   ]);
 
   const existingTitles = await client.from("title_progress").select("title_id").eq("profile_id", profileId);
@@ -363,7 +365,8 @@ export async function syncStructuredProfile(profileId: string) {
       private_note: notes[titleId] || "",
       watched_at: watchedDates[titleId] ? new Date(`${watchedDates[titleId]}T12:00:00Z`).toISOString() : null,
       rewatch_count: Math.max(0, Number(rewatches[titleId]) || 0),
-      revision: Date.now(),
+      revision: activity[titleId] || Date.now(),
+      device_id: deviceId,
     }));
     const inserted = await client.from("title_progress").upsert(rows, { onConflict: "profile_id,title_id" });
     if (inserted.error) throw inserted.error;
@@ -374,20 +377,30 @@ export async function syncStructuredProfile(profileId: string) {
     if (removed.error) throw removed.error;
   }
 
-  const clearedEpisodes = await client.from("episode_progress").delete().eq("profile_id", profileId);
-  if (clearedEpisodes.error) throw clearedEpisodes.error;
-  const episodeRows = Object.entries(episodes).flatMap(([titleId, values]) =>
-    (Array.isArray(values) ? values : []).map((episodeNumber) => ({
+  const existingEpisodes = await client.from("episode_progress").select("title_id,season_number,episode_number").eq("profile_id", profileId);
+  if (existingEpisodes.error) throw existingEpisodes.error;
+  const localEpisodeKeys = new Set(Object.entries(episodes).flatMap(([titleId, values]) =>
+    (Array.isArray(values) ? values : []).map((episodeNumber) => `${titleId}:1:${episodeNumber}`),
+  ));
+  const allEpisodeKeys = new Set([
+    ...localEpisodeKeys,
+    ...(existingEpisodes.data || []).map((row) => `${row.title_id}:${row.season_number}:${row.episode_number}`),
+  ]);
+  const episodeRows = [...allEpisodeKeys].map((key) => {
+    const [titleId, seasonNumber, episodeNumber] = key.split(":");
+    return {
       profile_id: profileId,
       title_id: titleId,
-      season_number: 1,
-      episode_number: episodeNumber,
-      completed: true,
-      revision: Date.now(),
-    })),
-  );
+      season_number: Number(seasonNumber),
+      episode_number: Number(episodeNumber),
+      completed: localEpisodeKeys.has(key),
+      watched_at: localEpisodeKeys.has(key) ? new Date(activity[titleId] || Date.now()).toISOString() : null,
+      revision: activity[titleId] || Date.now(),
+      device_id: deviceId,
+    };
+  });
   if (episodeRows.length) {
-    const inserted = await client.from("episode_progress").insert(episodeRows);
+    const inserted = await client.from("episode_progress").upsert(episodeRows, { onConflict: "profile_id,title_id,season_number,episode_number" });
     if (inserted.error) throw inserted.error;
   }
 
