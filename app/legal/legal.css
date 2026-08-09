@@ -84,7 +84,15 @@
 }
 
 .legal-page {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
   color: #f7f8fb;
   background:
     radial-gradient(circle at 15% 2%, rgba(214, 31, 46, 0.18), transparent 30rem),

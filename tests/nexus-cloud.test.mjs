@@ -245,8 +245,14 @@ test("browser navigation serializes views, titles and social profiles", async ()
   assert.equal(navigation.readNavigationState("?view=unknown").view, "dashboard");
 
   const renderer = await read("../desktop/renderer.tsx");
+  const navigationHook = await read("../app/features/navigation/nexus-navigation.ts");
+  const legalStyles = await read("../app/legal/legal.css");
   assert.match(renderer, /key=\{selected\.id\}/);
   assert.match(renderer, /closeTopLayer/);
+  assert.match(navigationHook, /historyWriteMode/);
+  assert.match(navigationHook, /currentTitleId && nextTitleId/);
+  assert.match(legalStyles, /\.legal-page\s*\{[^}]*height:\s*100dvh/s);
+  assert.match(legalStyles, /\.legal-page\s*\{[^}]*overflow-y:\s*auto/s);
 });
 
 test("the social graph uses explicit friendships and privacy-aware DTO functions", async () => {

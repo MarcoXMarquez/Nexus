@@ -28,6 +28,7 @@ export function useNexusNavigation() {
   const popTarget = useRef<string | null>(null);
   const lastSearch = useRef(navigationSearch(initial));
   const historyDepth = useRef(0);
+  const historyWriteMode = useRef<"push" | "replace">("push");
 
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
@@ -66,6 +67,13 @@ export function useNexusNavigation() {
 
     if (lastSearch.current === search) return;
     lastSearch.current = search;
+
+    if (historyWriteMode.current === "replace") {
+      historyWriteMode.current = "push";
+      window.history.replaceState({ nexus: state, nexusDepth: historyDepth.current }, "", url);
+      return;
+    }
+
     historyDepth.current += 1;
     window.history.pushState({ nexus: state, nexusDepth: historyDepth.current }, "", url);
   }, [compareHandle, friendHandle, titleId, view]);
@@ -84,7 +92,14 @@ export function useNexusNavigation() {
 
   const openTitle = useCallback(
     (nextTitleId: string | null) => {
-      setTitleId(nextTitleId);
+      setTitleId((currentTitleId) => {
+        // A detail panel is a single navigation layer. Moving between titles
+        // replaces that layer so one close action dismisses the whole session.
+        if (currentTitleId && nextTitleId && currentTitleId !== nextTitleId) {
+          historyWriteMode.current = "replace";
+        }
+        return nextTitleId;
+      });
     },
     [setTitleId],
   );
@@ -110,15 +125,22 @@ export function useNexusNavigation() {
   );
 
   const closeTopLayer = useCallback(() => {
-    if (titleId || friendHandle || compareHandle) {
+    if (titleId) {
+      if (historyDepth.current > 0) {
+        window.history.back();
+      } else {
+        historyWriteMode.current = "replace";
+        setTitleId(null);
+      }
+      return true;
+    }
+    if (friendHandle || compareHandle) {
       if (historyDepth.current > 0) {
         window.history.back();
       } else if (compareHandle) {
         setCompareHandle(null);
-      } else if (friendHandle) {
-        setFriendHandle(null);
       } else {
-        setTitleId(null);
+        setFriendHandle(null);
       }
       return true;
     }
