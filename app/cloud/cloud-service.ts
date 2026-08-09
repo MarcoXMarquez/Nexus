@@ -442,14 +442,12 @@ export async function createInvitation(
   const tokenHash = [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-  const { error } = await client
-    .from("marathon_invitations")
-    .insert({
-      marathon_id: marathonId,
-      token_hash: tokenHash,
-      role,
-      expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
-    });
+  const { error } = await client.from("marathon_invitations").insert({
+    marathon_id: marathonId,
+    token_hash: tokenHash,
+    role,
+    expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
+  });
   if (error) throw error;
   return { token, url: `${publicAppUrl()}/invite/${token}` };
 }
