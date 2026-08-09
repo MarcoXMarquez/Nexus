@@ -20,19 +20,10 @@ import { getSupabase } from "../app/cloud/supabase";
 import { DiscoveryHub, type DiscoveryItem } from "../app/features/discovery-hub";
 import { decodeMarathonCode, encodeMarathonCode } from "../app/features/marathon-code";
 import { achievementArtFor } from "../app/features/achievement-art";
+import { type AppView, useNexusNavigation } from "../app/features/navigation/nexus-navigation";
 
 type EpisodeState = Record<string, number[]>;
 type MapItem = MCUItem & { releaseValue: number; trackId: string; order: number };
-type AppView =
-  | "dashboard"
-  | "map"
-  | "list"
-  | "routes"
-  | "planner"
-  | "explore"
-  | "calendar"
-  | "achievements"
-  | "profiles";
 type Intent = "chronological" | "movies" | "series" | "short" | "new-line" | "random";
 type Recommendation = { item: MapItem; reason: string };
 type IconName =
@@ -1144,8 +1135,13 @@ export function App() {
     setCustomLists,
   } = useStoredProgress();
   const { marathons, setMarathons } = useStoredMarathons();
-  const [view, setView] = useState<AppView>("dashboard");
-  const [selected, setSelected] = useState<MapItem | null>(null);
+  const navigation = useNexusNavigation();
+  const { view, titleId, setView, setTitleId, closeTopLayer } = navigation;
+  const selected = titleId ? ITEM_BY_ID.get(titleId) || null : null;
+  const setSelected = useCallback(
+    (item: MapItem | null) => setTitleId(item?.id || null),
+    [setTitleId],
+  );
   const [activeTrack, setActiveTrack] = useState("all");
   const [query, setQuery] = useState("");
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
@@ -3308,6 +3304,11 @@ export function App() {
     };
   }, [detailMode, preferences.reduceMotion, selected, view, zoom]);
 
+  const closeSelected = useCallback(() => {
+    setDetailPinned(false);
+    if (!closeTopLayer()) setSelected(null);
+  }, [closeTopLayer, setSelected]);
+
   const openGlobalHit = useCallback((hit: GlobalHit) => {
     setGlobalSearchOpen(false);
     setGlobalQuery("");
@@ -3361,8 +3362,7 @@ export function App() {
       else if (event.key.toLowerCase() === "f" && document.activeElement?.tagName !== "INPUT")
         fitMap();
       else if (event.key === "Escape") {
-        setSelected(null);
-        setDetailPinned(false);
+        if (selected) closeSelected();
         setQuery("");
         setGlobalSearchOpen(false);
         setSettingsOpen(false);
@@ -3371,7 +3371,18 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [changeZoom, fitMap, globalHits, globalIndex, globalSearchOpen, openGlobalHit, view, zoom]);
+  }, [
+    changeZoom,
+    closeSelected,
+    fitMap,
+    globalHits,
+    globalIndex,
+    globalSearchOpen,
+    openGlobalHit,
+    selected,
+    view,
+    zoom,
+  ]);
 
   useEffect(() => {
     if (view !== "map" || mapInitializedRef.current) return;
@@ -4447,6 +4458,7 @@ export function App() {
 
       {selected && (
         <DetailPanel
+          key={selected.id}
           item={selected}
           mode={detailMode}
           pinned={detailPinned}
@@ -4460,10 +4472,7 @@ export function App() {
           watchedDate={watchedDates[selected.id] || ""}
           rewatchCount={rewatches[selected.id] || 0}
           customLists={customLists}
-          onClose={() => {
-            setSelected(null);
-            setDetailPinned(false);
-          }}
+          onClose={closeSelected}
           onMode={setDetailMode}
           onPinned={() => setDetailPinned((value) => !value)}
           onToggleWatched={() => toggleWatched(selected)}

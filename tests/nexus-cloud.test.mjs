@@ -174,3 +174,32 @@ test("spoiler modes use dedicated tabs and the temporal tree artwork", async () 
   assert.match(styles, /loki-time-tree-v1\.webp/);
   assert.doesNotMatch(styles, /--story-art:url\("\/backdrops\/hero\/doctor-strange\.webp"\)/);
 });
+
+test("browser navigation serializes views, titles and social profiles", async () => {
+  const source = await read("../app/features/navigation/url-state.ts");
+  const javascript = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const navigation = await import(
+    `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
+  );
+
+  const state = navigation.readNavigationState(
+    "?view=map&title=iron-man&profile=marco&compare=marco",
+  );
+  assert.deepEqual(state, {
+    view: "map",
+    titleId: "iron-man",
+    friendHandle: "marco",
+    compareHandle: "marco",
+  });
+  assert.equal(
+    navigation.navigationSearch(state),
+    "?view=map&title=iron-man&profile=marco&compare=marco",
+  );
+  assert.equal(navigation.readNavigationState("?view=unknown").view, "dashboard");
+
+  const renderer = await read("../desktop/renderer.tsx");
+  assert.match(renderer, /key=\{selected\.id\}/);
+  assert.match(renderer, /closeTopLayer/);
+});
