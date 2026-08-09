@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
@@ -94,10 +94,23 @@ test("personal marathons live in the library and open as reusable sequence maps"
 test("achievement artwork is independent from posters and keeps its provenance", async () => {
   const renderer = await read("../desktop/renderer.tsx");
   const art = await read("../app/features/achievement-art.ts");
+  const manifest = JSON.parse(await read("../public/achievement-art/manifest.json"));
+  const badgeIndex = JSON.parse(await read("../public/achievement-art/badge-index.json"));
   assert.match(renderer, /achievementArtFor/);
-  assert.match(art, /BACKDROP_BY_ID/);
-  assert.match(art, /sfwReviewed:true/);
-  assert.match(art, /source:art\.source/);
+  assert.doesNotMatch(art, /posterFor|POSTER_BY_ID/);
+  assert.match(art, /badges\/by-id\/256/);
+  assert.match(art, /achievement-art\/heroes/);
+  assert.equal(manifest.sfwReviewed, true);
+  assert.equal(manifest.badgeCount, 126);
+  assert.equal(badgeIndex.length, 126);
+  assert.equal(manifest.heroes.length, 12);
+  const [menuFiles, detailFiles] = await Promise.all([
+    readdir(new URL("../public/achievement-art/badges/by-id/256/", import.meta.url)),
+    readdir(new URL("../public/achievement-art/badges/by-id/512/", import.meta.url)),
+  ]);
+  const expectedFiles = badgeIndex.map((id) => `${id}.webp`).sort();
+  assert.deepEqual(menuFiles.sort(), expectedFiles);
+  assert.deepEqual(detailFiles.sort(), expectedFiles);
 });
 
 test("profile management is replaced by the personal archive experience", async () => {

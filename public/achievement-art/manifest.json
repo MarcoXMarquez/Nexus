@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "updatedAt": "2026-08-08",
+  "policy": {
+    "smallImages": "Original square badges generated specifically for Nexus; never title posters.",
+    "largeImages": "Original SFW fan-art-style panoramas with no actors, logos, text or watermarks.",
+    "author": "Nexus original artwork with OpenAI image generation",
+    "redistribution": "Bundled as application assets for this Nexus project"
+  },
+  "badgeCount": 126,
+  "badgeMode": "one original image per permanent achievement ID",
+  "badgeIndex": "./badge-index.json",
+  "heroes": [
+    "team", "spider", "mutants", "timeline", "street", "cosmic",
+    "quartet", "mystic", "symbiote", "wakanda", "scarlet", "wolverine"
+  ],
+  "variants": {
+    "menu": 256,
+    "detail": 512,
+    "heroMax": "1600x900"
+  },
+  "sfwReviewed": true
+}

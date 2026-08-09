@@ -41,3 +41,9 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+# ImageGen masters and superseded family badges stay local. The optimized
+# one-per-achievement WebP library under badges/by-id is committed/deployed.
+/public/achievement-art/badges/source-by-id/
+/public/achievement-art/badges/256/
+/public/achievement-art/badges/512/

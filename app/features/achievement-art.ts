@@ -1,45 +1,130 @@
-import { BACKDROP_BY_ID } from "../backdrop-data";
-
 /**
- * Catálogo visual independiente de los pósteres. Solo usa arte panorámico
- * promocional ya revisado y almacenado localmente; nunca hace hotlinking.
- * `source` conserva la procedencia para auditoría y atribución.
+ * Achievement art is deliberately independent from title posters.
+ *
+ * - `thumb` is the compact 256px Steam-like badge used in menus.
+ * - `badge` is the 512px version used in the expanded achievement panel.
+ * - `hero` is original, SFW panoramic art designed for wide UI crops.
+ *
+ * Asset provenance lives in `/public/achievement-art/manifest.json`.
  */
-export type AchievementArt = { thumb:string; hero:string; source:string; focalPoint:string; sfwReviewed:true };
-
-const ART_BY_ACHIEVEMENT:Record<string,string>={
-  "iron-trilogy":"iron-man-3","legacy-iron":"endgame","on-your-left":"winter-soldier","still-worthy":"ragnarok","always-angry":"avengers",
-  "avengers-idea":"avengers","new-avengers":"thunderbolts","avengers-all-worlds":"endgame","wakanda-forever":"wakanda-forever","we-are-groot":"guardians-3",
-  "galaxy-misfits":"guardians","glorious-purpose":"loki-2","what-is-grief":"wandavision","bargain":"doctor-strange","under-spell":"no-way-home",
-  "great-power":"spiderman-raimi-2","bad-lizard":"amazing-spiderman-1","back-home":"homecoming","three-spiders":"no-way-home","always-spectacular":"spectacular-spiderman",
-  "web-destiny":"spider-verse","to-me-xmen":"xmen-2000","future-reunited":"xmen-dofp","best-at-what-i-do":"logan","mutant-proud":"xmen97-1",
-  "storm-goddess":"xmen97-1","fire-life-incarnate":"xmen-last-stand","clobbering-time":"fantastic-four-2005","first-family":"fantastic-four-2005",
-  "hells-kitchen-devil":"daredevil-ba-1","street-heroes":"defenders","we-are-venom":"venom","watcher-saw-all":"what-if-3","animated-mightiest":"earths-mightiest-heroes",
-  "portals-open":"endgame","multiverse-visitors":"no-way-home","timeline-protector":"loki-2","ready-doomsday":"doomsday","battleworld-destiny":"secret-wars",
-  "phase-traveler":"avengers","one-reality":"multiverse-madness","half-multiverse":"loki-2","everything-connected":"endgame","multiverse-museum":"deadpool-wolverine",
-  "architect":"loki-2","code-between-worlds":"no-way-home","together-now":"avengers","reality-curator":"loki-2","sorcerer-oath":"doctor-strange",
+export type AchievementArt = {
+  thumb: string;
+  badge: string;
+  hero: string;
+  source: string;
+  focalPoint: string;
+  sfwReviewed: true;
 };
 
-const GROUP_ART:Record<string,string[]>={
-  "Spider-Man":["no-way-home","spider-verse","spiderman-raimi-2","amazing-spiderman-1"],
-  "Mutantes y legados":["xmen97-1","xmen-dofp","logan","fantastic-four-2005"],
-  "Personajes y equipos":["avengers","guardians-3","thunderbolts","wakanda-forever"],
-  "UCM y personajes":["endgame","ragnarok","wandavision","doctor-strange"],
-  "Legados y animación":["earths-mightiest-heroes","what-if-3","spectacular-spiderman","xmen-animated-series"],
-  "Convergencias":["no-way-home","deadpool-wolverine","doomsday","secret-wars"],
-  "Sagas y universos":["endgame","loki-2","multiverse-madness","infinity-war"],
-  "Actividad personal":["loki-2","avengers","guardians","spider-verse"],
-  "Eras y décadas":["xmen-2000","iron-man","avengers","no-way-home"],
+type BadgeFamily =
+  | "iron-man"
+  | "captain"
+  | "thor"
+  | "amazing-spider"
+  | "loki"
+  | "marathon"
+  | "mutants"
+  | "team"
+  | "mystic"
+  | "guardians"
+  | "scarlet"
+  | "wolverine"
+  | "street"
+  | "symbiote"
+  | "first-family"
+  | "wakanda";
+
+const IDS: Partial<Record<BadgeFamily, string[]>> = {
+  "iron-man": ["iron-trilogy", "legacy-iron", "boom-looking-for-this", "first-movie"],
+  captain: ["on-your-left", "on-your-order", "end-of-line", "red-room"],
+  thor: ["still-worthy", "always-angry"],
+  "amazing-spider": [
+    "great-power", "bad-lizard", "back-home", "three-spiders", "wear-mask",
+    "always-spectacular", "animated-neighbor", "web-destiny", "multiverse-visitors",
+  ],
+  loki: [
+    "glorious-purpose", "timeline-protector", "phase-traveler", "one-reality",
+    "half-multiverse", "through-time", "after-blip", "portals-open",
+  ],
+  mystic: [
+    "bargain", "sorcerer-oath", "when-night-falls", "spirit-vengeance",
+    "knows-fear", "under-spell", "battleworld-destiny",
+  ],
+  guardians: [
+    "galaxy-misfits", "need-that-arm", "we-are-groot", "daughters-thanos",
+    "cosmic-limits", "higher-further", "marvels-together", "seven-thousand-years",
+  ],
+  scarlet: [
+    "what-is-grief", "beautiful-because-lasting", "agatha-all-along",
+    "embrace-chaos", "next-generation",
+  ],
+  wolverine: ["best-at-what-i-do", "maximum-effort"],
+  street: [
+    "hells-kitchen-devil", "street-heroes", "one-batch", "heroes-new-york",
+    "alias-investigations", "sweet-christmas", "red-sai", "protector-kun-lun",
+    "man-without-fear", "king-of-city", "punishment-served",
+  ],
+  symbiote: ["we-are-venom", "symbiote-web"],
+  "first-family": ["clobbering-time", "first-family", "the-herald", "flame-on"],
+  wakanda: ["wakanda-forever", "she-is-not-alone"],
+  mutants: [
+    "to-me-xmen", "future-reunited", "mutant-proud", "legacy-keepers",
+    "eyes-on-target", "storm-goddess", "fire-life-incarnate", "sugar-rogue",
+    "name-is-gambit", "peace-never-option", "hope-coexistence",
+  ],
+  team: [
+    "avengers-assembled", "avengers-idea", "new-avengers", "avengers-all-worlds",
+    "everything-connected", "soul-price", "ready-doomsday", "together-now",
+    "animated-mightiest", "watcher-saw-all", "every-frame", "daughters-thanos",
+    "level-seven", "marvels-together",
+  ],
 };
 
-function hash(value:string){let result=0;for(let index=0;index<value.length;index+=1)result=(result*31+value.charCodeAt(index))>>>0;return result;}
+const FAMILY_BY_ID = new Map<string, BadgeFamily>(
+  Object.entries(IDS).flatMap(([family, ids]) =>
+    (ids ?? []).map((id) => [id, family as BadgeFamily] as const),
+  ),
+);
 
-export function achievementArtFor(id:string,group:string,coverId?:string):AchievementArt {
-  const choices=GROUP_ART[group]||GROUP_ART["UCM y personajes"];
-  const preferred=ART_BY_ACHIEVEMENT[id]||choices[hash(id)%choices.length]||coverId;
-  const fallback=coverId&&BACKDROP_BY_ID[coverId]?coverId:choices.find((entry)=>BACKDROP_BY_ID[entry]);
-  const selected=(preferred&&BACKDROP_BY_ID[preferred]?preferred:fallback)||"";
-  const art=BACKDROP_BY_ID[selected];
-  if(!art)return {thumb:"./artwork/multiverse-hero-v1.webp",hero:"./artwork/multiverse-hero-v1.webp",source:"Arte temático local de Nexus",focalPoint:"center",sfwReviewed:true};
-  return {thumb:`.${art.card}`,hero:`.${art.hero}`,source:art.source,focalPoint:"center",sfwReviewed:true};
+const HERO_BY_FAMILY: Record<BadgeFamily, string> = {
+  "iron-man": "team",
+  captain: "team",
+  thor: "team",
+  "amazing-spider": "spider",
+  loki: "timeline",
+  marathon: "timeline",
+  mutants: "mutants",
+  team: "team",
+  mystic: "mystic",
+  guardians: "cosmic",
+  scarlet: "scarlet",
+  wolverine: "wolverine",
+  street: "street",
+  symbiote: "symbiote",
+  "first-family": "quartet",
+  wakanda: "wakanda",
+};
+
+function familyFromGroup(group: string): BadgeFamily {
+  const value = group.toLowerCase();
+  if (value.includes("spider")) return "amazing-spider";
+  if (value.includes("mutant") || value.includes("legado")) return "mutants";
+  if (value.includes("animaci")) return "team";
+  if (value.includes("actividad")) return "marathon";
+  if (value.includes("era") || value.includes("saga") || value.includes("universo")) return "loki";
+  return "team";
+}
+
+export function achievementArtFor(id: string, group: string, _coverId?: string): AchievementArt {
+  void _coverId; // Kept for API compatibility with callers that also resolve a title cover.
+  const family = FAMILY_BY_ID.get(id) ?? familyFromGroup(group);
+  const hero = HERO_BY_FAMILY[family];
+  return {
+    thumb: `./achievement-art/badges/by-id/256/${id}.webp`,
+    badge: `./achievement-art/badges/by-id/512/${id}.webp`,
+    hero: `./achievement-art/heroes/${hero}.webp`,
+    source: "Ilustración original SFW creada para Nexus",
+    focalPoint: "center",
+    sfwReviewed: true,
+  };
 }
