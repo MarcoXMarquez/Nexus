@@ -27,12 +27,14 @@ export function useNexusNavigation() {
   const initialized = useRef(false);
   const popTarget = useRef<string | null>(null);
   const lastSearch = useRef(navigationSearch(initial));
+  const historyDepth = useRef(0);
 
   useEffect(() => {
-    const onPopState = () => {
+    const onPopState = (event: PopStateEvent) => {
       const next = readNavigationState(window.location.search);
       const nextSearch = navigationSearch(next);
 
+      historyDepth.current = Number(event.state?.nexusDepth) || 0;
       popTarget.current = nextSearch;
       setView(next.view);
       setTitleId(next.titleId);
@@ -52,7 +54,7 @@ export function useNexusNavigation() {
     if (!initialized.current) {
       initialized.current = true;
       lastSearch.current = search;
-      window.history.replaceState({ nexus: state }, "", url);
+      window.history.replaceState({ nexus: state, nexusDepth: historyDepth.current }, "", url);
       return;
     }
 
@@ -64,7 +66,8 @@ export function useNexusNavigation() {
 
     if (lastSearch.current === search) return;
     lastSearch.current = search;
-    window.history.pushState({ nexus: state }, "", url);
+    historyDepth.current += 1;
+    window.history.pushState({ nexus: state, nexusDepth: historyDepth.current }, "", url);
   }, [compareHandle, friendHandle, titleId, view]);
 
   const openView = useCallback(
@@ -108,11 +111,19 @@ export function useNexusNavigation() {
 
   const closeTopLayer = useCallback(() => {
     if (titleId || friendHandle || compareHandle) {
-      window.history.back();
+      if (historyDepth.current > 0) {
+        window.history.back();
+      } else if (compareHandle) {
+        setCompareHandle(null);
+      } else if (friendHandle) {
+        setFriendHandle(null);
+      } else {
+        setTitleId(null);
+      }
       return true;
     }
     return false;
-  }, [compareHandle, friendHandle, titleId]);
+  }, [compareHandle, friendHandle, setCompareHandle, setFriendHandle, setTitleId, titleId]);
 
   return {
     view,

@@ -786,6 +786,25 @@ revoke insert, update, delete on public.friend_requests, public.friendships, pub
 grant select on public.friend_requests, public.friendships, public.profile_blocks, public.moderation_reports to authenticated;
 grant select, insert, update on public.social_settings to authenticated;
 
+-- Security-definer RPCs are never callable by anonymous clients. PostgreSQL
+-- grants function execution to PUBLIC by default, so revoke it explicitly
+-- before exposing the narrow authenticated API below.
+revoke all on function public.set_social_handle(uuid, text) from public, anon;
+revoke all on function public.update_social_settings(uuid, text, text, text, text, text, boolean) from public, anon;
+revoke all on function public.search_social_profiles(uuid, text, integer, integer) from public, anon;
+revoke all on function public.send_friend_request(uuid, uuid) from public, anon;
+revoke all on function public.respond_friend_request(uuid, uuid, boolean) from public, anon;
+revoke all on function public.cancel_friend_request(uuid, uuid) from public, anon;
+revoke all on function public.remove_friend(uuid, uuid) from public, anon;
+revoke all on function public.block_social_profile(uuid, uuid) from public, anon;
+revoke all on function public.unblock_social_profile(uuid, uuid) from public, anon;
+revoke all on function public.list_friend_requests(uuid) from public, anon;
+revoke all on function public.list_friends(uuid) from public, anon;
+revoke all on function public.get_social_profile(uuid, text) from public, anon;
+revoke all on function public.compare_friend_progress(uuid, uuid) from public, anon;
+revoke all on function public.list_friend_activity(uuid, integer) from public, anon;
+revoke all on function public.report_social_profile(uuid, uuid, text, text) from public, anon;
+
 grant execute on function public.set_social_handle(uuid, text) to authenticated;
 grant execute on function public.update_social_settings(uuid, text, text, text, text, text, boolean) to authenticated;
 grant execute on function public.search_social_profiles(uuid, text, integer, integer) to authenticated;

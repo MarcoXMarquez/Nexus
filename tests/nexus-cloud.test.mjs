@@ -233,5 +233,21 @@ test("the social graph uses explicit friendships and privacy-aware DTO functions
 
   assert.match(sql, /event\.payload - 'note' - 'email' - 'deviceId'/);
   assert.match(sql, /profiles_are_blocked/);
+  assert.match(sql, /revoke all on function public\.send_friend_request.*from public, anon/i);
   assert.doesNotMatch(service, /private_note|profile_snapshots|devices/);
+});
+
+test("the friends workspace is modular, navigable and privacy aware", async () => {
+  const renderer = await read("../desktop/renderer.tsx");
+  const view = await read("../app/features/friends/friends-view.tsx");
+  const styles = await read("../app/features/friends/friends.css");
+
+  assert.match(renderer, /<FriendsView/);
+  assert.match(renderer, /social-nav-badge/);
+  for (const section of ["Amigos", "Solicitudes", "Buscar", "Privacidad"])
+    assert.match(view, new RegExp(section));
+  assert.match(view, /spoilerSafe/);
+  assert.match(view, /Comparar avance/);
+  assert.match(styles, /\.friend-card-grid/);
+  assert.match(styles, /\.comparison-lists/);
 });

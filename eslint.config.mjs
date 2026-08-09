@@ -71,7 +71,7 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    files: ["app/marathon/**/*.tsx"],
+    files: ["app/marathon/**/*.tsx", "app/features/friends/**/*.tsx"],
     rules: {
       // Posters are already generated static assets; Next image transforms would
       // consume Vercel quota without improving these pre-sized files.

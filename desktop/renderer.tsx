@@ -20,6 +20,7 @@ import { getSupabase } from "../app/cloud/supabase";
 import { DiscoveryHub, type DiscoveryItem } from "../app/features/discovery-hub";
 import { decodeMarathonCode, encodeMarathonCode } from "../app/features/marathon-code";
 import { achievementArtFor } from "../app/features/achievement-art";
+import { FriendsView } from "../app/features/friends/friends-view";
 import { type AppView, useNexusNavigation } from "../app/features/navigation/nexus-navigation";
 
 type EpisodeState = Record<string, number[]>;
@@ -1136,7 +1137,17 @@ export function App() {
   } = useStoredProgress();
   const { marathons, setMarathons } = useStoredMarathons();
   const navigation = useNexusNavigation();
-  const { view, titleId, setView, setTitleId, closeTopLayer } = navigation;
+  const {
+    view,
+    titleId,
+    friendHandle,
+    compareHandle,
+    setView,
+    setTitleId,
+    openFriend,
+    compareWith,
+    closeTopLayer,
+  } = navigation;
   const selected = titleId ? ITEM_BY_ID.get(titleId) || null : null;
   const setSelected = useCallback(
     (item: MapItem | null) => setTitleId(item?.id || null),
@@ -1150,6 +1161,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [socialRequestCount, setSocialRequestCount] = useState(0);
   const [detailMode, setDetailMode] = useState<DetailPanelMode>("full");
   const [detailPinned, setDetailPinned] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(() => {
@@ -1291,6 +1303,13 @@ export function App() {
       window.removeEventListener("nexus:open-achievements", openAchievements);
       window.removeEventListener("nexus:local-change", refreshAchievements);
     };
+  }, []);
+  useEffect(() => {
+    const updateSocialCount = (event: Event) => {
+      setSocialRequestCount(Math.max(0, Number((event as CustomEvent<number>).detail) || 0));
+    };
+    window.addEventListener("nexus:social-count", updateSocialCount);
+    return () => window.removeEventListener("nexus:social-count", updateSocialCount);
   }, []);
   useEffect(() => {
     if (window.nexusDesktop || !("serviceWorker" in navigator)) return;
@@ -3985,6 +4004,22 @@ export function App() {
             </span>
           </button>
           <span className="nav-group-label">Cuenta</span>
+          <button className={view === "friends" ? "active" : ""} onClick={() => setView("friends")}>
+            <Icon name="share" />
+            <span>
+              <strong>Amigos</strong>
+              <small>
+                {socialRequestCount
+                  ? `${socialRequestCount} solicitud${socialRequestCount === 1 ? "" : "es"}`
+                  : "Perfiles y comparaciones"}
+              </small>
+            </span>
+            {socialRequestCount > 0 && (
+              <b className="social-nav-badge" aria-label={`${socialRequestCount} solicitudes`}>
+                {socialRequestCount > 9 ? "9+" : socialRequestCount}
+              </b>
+            )}
+          </button>
           <button
             className={view === "profiles" ? "active" : ""}
             onClick={() => {
@@ -4413,6 +4448,29 @@ export function App() {
           achievements={preferences.achievements ? achievements : []}
           watched={watched}
           onOpenRoute={showAchievementRoute}
+        />
+      ) : view === "friends" ? (
+        <FriendsView
+          localProfileId={activeProfileId}
+          requestedHandle={friendHandle}
+          compareHandle={compareHandle}
+          watched={watched}
+          spoilerSafe={spoilerSafe}
+          onOpenFriend={openFriend}
+          onCompare={compareWith}
+          onCloseLayer={() => {
+            closeTopLayer();
+          }}
+          onOpenTitle={(id) => {
+            const item = ITEM_BY_ID.get(id);
+            if (item) setSelected(item);
+          }}
+          onOpenMarathons={() => {
+            setLibraryInitialTab("marathons");
+            setView("list");
+            notify("Selecciona un maratón para copiar su invitación segura");
+          }}
+          notify={notify}
         />
       ) : view === "profiles" ? (
         <MyProfileView
