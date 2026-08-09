@@ -28,6 +28,7 @@ import type {
   SocialSettings,
 } from "../../cloud/social-types";
 import "./friends.css";
+import { browserDateLocale } from "../../i18n/locale";
 
 type FriendsTab = "overview" | "friends" | "requests" | "search" | "privacy";
 
@@ -597,7 +598,7 @@ function FriendsOverview({
                           : `vio ${title || "un título"}`}
                     </small>
                   </span>
-                  <time>{new Date(entry.createdAt).toLocaleDateString("es-PE")}</time>
+                  <time>{new Date(entry.createdAt).toLocaleDateString(browserDateLocale())}</time>
                 </button>
               );
             })}
@@ -1023,7 +1024,9 @@ function FriendProfilePanel({
           <h1>{profile.name}</h1>
           <code>@{profile.handle}</code>
           {profile.friendsSince && (
-            <p>Amigos desde {new Date(profile.friendsSince).toLocaleDateString("es-PE")}</p>
+            <p>
+              Amigos desde {new Date(profile.friendsSince).toLocaleDateString(browserDateLocale())}
+            </p>
           )}
         </div>
         <div className="friend-profile-actions">

@@ -5,10 +5,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSupabase } from "../../cloud/supabase";
 import type { CloudProfile } from "../../cloud/types";
+import { ENGLISH_ACHIEVEMENTS } from "../../features/achievements/achievement-copy";
+import { LanguageSwitcher } from "../../i18n/language-switcher";
+import { useI18n } from "../../i18n/provider";
 
 type PublicAchievement = { achievement_id: string; unlocked_at: string };
 
 export default function PublicProfilePage() {
+  const { locale, dateLocale } = useI18n();
   const { id } = useParams<{ id: string }>();
   const [profile, setProfile] = useState<CloudProfile | null>(null);
   const [achievements, setAchievements] = useState<PublicAchievement[]>([]);
@@ -51,6 +55,7 @@ export default function PublicProfilePage() {
           <header>
             <Link href="/">NEXUS</Link>
             <span>Perfil público</span>
+            <LanguageSwitcher compact />
           </header>
           <section
             className="public-profile-hero"
@@ -71,9 +76,14 @@ export default function PublicProfilePage() {
                   <article key={achievement.achievement_id}>
                     <b>★</b>
                     <span>
-                      <strong>{achievement.achievement_id.replace(/-/g, " ")}</strong>
+                      <strong>
+                        {locale === "en-US"
+                          ? ENGLISH_ACHIEVEMENTS[achievement.achievement_id]?.title ||
+                            achievement.achievement_id.replace(/-/g, " ")
+                          : achievement.achievement_id.replace(/-/g, " ")}
+                      </strong>
                       <small>
-                        {new Intl.DateTimeFormat("es-PE", { dateStyle: "medium" }).format(
+                        {new Intl.DateTimeFormat(dateLocale, { dateStyle: "medium" }).format(
                           new Date(achievement.unlocked_at),
                         )}
                       </small>

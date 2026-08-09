@@ -18,6 +18,8 @@ import {
   getGuestSession,
   startFreshGuestSession,
 } from "./guest-session";
+import { LanguageSwitcher } from "../i18n/language-switcher";
+import { LegalLinks } from "../legal/legal-links";
 
 type Screen = "checking" | "welcome" | "signin" | "signup" | "recover" | "app";
 
@@ -143,6 +145,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <strong>NEXUS</strong>
             <small>MCU TRACKER</small>
           </div>
+          <LanguageSwitcher compact />
         </header>
         {screen === "welcome" ? (
           <>
@@ -303,6 +306,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </>
         )}
       </section>
+      <LegalLinks className="auth-legal-links" />
     </main>
   );
 }

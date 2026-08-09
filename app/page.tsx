@@ -7,7 +7,7 @@ const NexusApp = dynamic(() => import("../desktop/renderer").then((module) => mo
   ssr: false,
   loading: () => (
     <div className="nexus-loading" role="status">
-      Preparando tu multiverso…
+      Preparing your multiverse…
     </div>
   ),
 });

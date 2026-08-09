@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { MCU_ITEMS, POSTER_BY_WIKI } from "../../mcu-data";
 import { getSupabase } from "../../cloud/supabase";
 import type { CloudMarathon } from "../../cloud/types";
+import { LanguageSwitcher } from "../../i18n/language-switcher";
 
 export default function PublicMarathonPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -34,6 +35,7 @@ export default function PublicMarathonPage() {
       <header>
         <Link href="/">NEXUS</Link>
         <span>Maratón compartido</span>
+        <LanguageSwitcher compact />
       </header>
       {error ? (
         <section className="shared-error">

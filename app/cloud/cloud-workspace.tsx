@@ -33,6 +33,7 @@ import type {
   LocalProfile,
   SyncState,
 } from "./types";
+import { browserDateLocale } from "../i18n/locale";
 
 type CloudTab = "account" | "marathons" | "achievements" | "devices" | "privacy";
 
@@ -57,9 +58,10 @@ const TAB_LABELS: Array<{ id: CloudTab; label: string }> = [
 
 function readableDate(value?: string | null) {
   if (!value) return "Nunca";
-  return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
-  );
+  return new Intl.DateTimeFormat(browserDateLocale(), {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function errorMessage(error: unknown) {

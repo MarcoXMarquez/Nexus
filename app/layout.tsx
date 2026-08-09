@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
+import { cookies } from "next/headers";
+import { isLocale, LOCALE_COOKIE } from "./i18n/locale";
+import { I18nProvider } from "./i18n/provider";
 import "./globals.css";
 import "../desktop/styles.css";
 import "./cloud/cloud.css";
 import "./features/discovery.css";
+import "./legal/legal.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -11,8 +15,12 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol =
     requestHeaders.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
   const metadataBase = new URL(`${protocol}://${host}`);
+  const storedLocale = (await cookies()).get(LOCALE_COOKIE)?.value;
+  const locale = isLocale(storedLocale) ? storedLocale : "es-419";
   const description =
-    "Tu recorrido interactivo por las películas, series y ramas del multiverso Marvel.";
+    locale === "en-US"
+      ? "Your interactive journey through Marvel movies, series, and multiverse branches."
+      : "Tu recorrido interactivo por las películas, series y ramas del multiverso Marvel.";
   return {
     metadataBase,
     title: "Nexus · MCU Tracker",
@@ -43,10 +51,14 @@ export const viewport: Viewport = {
   themeColor: "#090a0d",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const storedLocale = (await cookies()).get(LOCALE_COOKIE)?.value;
+  const locale = isLocale(storedLocale) ? storedLocale : "es-419";
   return (
-    <html lang="es" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+    <html lang={locale} suppressHydrationWarning>
+      <body suppressHydrationWarning>
+        <I18nProvider initial={locale}>{children}</I18nProvider>
+      </body>
     </html>
   );
 }

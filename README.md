@@ -40,4 +40,14 @@ La migración social más reciente es `supabase/migrations/202608080004_social_g
 
 El repositorio no se publica automáticamente. Sigue [DEPLOYMENT-VERCEL.md](./DEPLOYMENT-VERCEL.md) para desplegarlo personalmente en Vercel.
 
+## Idiomas y páginas públicas
+
+Nexus incluye español latino e inglés estadounidense. El idioma puede cambiarse
+antes de iniciar sesión y dentro de la aplicación; la preferencia queda guardada
+en el dispositivo. Las páginas públicas de Acerca de, Créditos y derechos,
+Contacto, Privacidad y Términos son accesibles sin una cuenta.
+
+La preparación interna para solicitar permisos o presentar el proyecto está en
+[docs/MARVEL-PROPOSAL.md](./docs/MARVEL-PROPOSAL.md).
+
 Empieza por [ARCHITECTURE.md](./ARCHITECTURE.md) para entender el código y por [CONTRIBUTING.md](./CONTRIBUTING.md) antes de añadir una función.

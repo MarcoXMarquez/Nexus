@@ -50,6 +50,51 @@ test("the app starts behind an account or guest gate", async () => {
   assert.match(gate, /Regístrate/);
 });
 
+test("Nexus exposes a persistent bilingual experience", async () => {
+  const layout = await read("../app/layout.tsx");
+  const provider = await read("../app/i18n/provider.tsx");
+  const locale = await read("../app/i18n/locale.ts");
+  const gate = await read("../app/cloud/auth-gate.tsx");
+  const renderer = await read("../desktop/renderer.tsx");
+  assert.match(layout, /I18nProvider/);
+  assert.match(provider, /es-419/);
+  assert.match(provider, /en-US/);
+  assert.match(locale, /nexus-locale-v1/);
+  assert.match(gate, /LanguageSwitcher/);
+  assert.match(renderer, /localizeAchievements/);
+});
+
+test("every permanent achievement has dedicated English copy", async () => {
+  const source = await read("../app/features/achievements/achievement-copy.ts");
+  const javascript = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const catalog = await import(
+    `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
+  );
+  const badgeIds = JSON.parse(await read("../public/achievement-art/badge-index.json"));
+  assert.equal(badgeIds.length, 126);
+  assert.equal(Object.keys(catalog.ENGLISH_ACHIEVEMENTS).length, 126);
+  for (const id of badgeIds) {
+    assert.ok(catalog.ENGLISH_ACHIEVEMENTS[id], `missing English achievement copy for ${id}`);
+    assert.ok(catalog.ENGLISH_ACHIEVEMENTS[id].title.trim());
+    assert.ok(catalog.ENGLISH_ACHIEVEMENTS[id].description.trim());
+  }
+});
+
+test("public legal, attribution, privacy, and contact pages are present", async () => {
+  const legal = await read("../app/legal/legal-page.tsx");
+  const sources = await read("../app/legal/source-directory.tsx");
+  for (const route of ["about", "credits", "contact", "privacy", "terms"])
+    assert.match(await read(`../app/${route}/page.tsx`), /LegalPage/);
+  assert.match(legal, /marcomarquezherrera@gmail\.com/);
+  assert.match(legal, /Marco Antonio Marquez Herrera/);
+  assert.match(legal, /This product uses the TMDB API but is not endorsed or certified by TMDB\./);
+  assert.match(legal, /not affiliated/i);
+  assert.match(sources, /TITLE_LOGO_BY_ID/);
+  assert.match(sources, /BACKDROP_BY_ID/);
+});
+
 test("catalog progress is normalized and synchronized automatically", async () => {
   const migration = await read("../supabase/migrations/202608080002_catalog_and_event_sync.sql");
   const cloud = await read("../app/cloud/cloud-workspace.tsx");
