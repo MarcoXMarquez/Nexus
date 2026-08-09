@@ -3,10 +3,14 @@
 import dynamic from "next/dynamic";
 import { AuthGate } from "./cloud/auth-gate";
 
-const NexusApp = dynamic(
-  () => import("../desktop/renderer").then((module) => module.App),
-  { ssr: false, loading: () => <div className="nexus-loading" role="status">Preparando tu multiverso…</div> },
-);
+const NexusApp = dynamic(() => import("../desktop/renderer").then((module) => module.App), {
+  ssr: false,
+  loading: () => (
+    <div className="nexus-loading" role="status">
+      Preparando tu multiverso…
+    </div>
+  ),
+});
 
 /**
  * La interfaz de escritorio es la experiencia canónica de Nexus. Esta página
@@ -14,5 +18,9 @@ const NexusApp = dynamic(
  * productos distintos.
  */
 export default function HomePage() {
-  return <AuthGate><NexusApp /></AuthGate>;
+  return (
+    <AuthGate>
+      <NexusApp />
+    </AuthGate>
+  );
 }

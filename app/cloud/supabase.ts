@@ -4,7 +4,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const viteEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 const nextUrl = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_SUPABASE_URL : undefined;
-const nextKey = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY : undefined;
+const nextKey =
+  typeof process !== "undefined" ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY : undefined;
 const url = nextUrl || viteEnv?.VITE_SUPABASE_URL || "";
 const anonKey = nextKey || viteEnv?.VITE_SUPABASE_ANON_KEY || "";
 
@@ -48,7 +49,12 @@ export function getSupabase(): SupabaseClient | null {
 }
 
 export function publicAppUrl() {
-  const configuredUrl = (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_APP_URL : undefined) || viteEnv?.VITE_APP_URL;
+  const configuredUrl =
+    (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_APP_URL : undefined) ||
+    viteEnv?.VITE_APP_URL;
   if (typeof window === "undefined") return configuredUrl || "http://localhost:3000";
-  return configuredUrl || (window.location.protocol.startsWith("http") ? window.location.origin : "http://localhost:3000");
+  return (
+    configuredUrl ||
+    (window.location.protocol.startsWith("http") ? window.location.origin : "http://localhost:3000")
+  );
 }

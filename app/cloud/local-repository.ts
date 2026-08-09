@@ -1,7 +1,14 @@
 "use client";
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import { ACCOUNT_VALUE_KEYS, CLOUD_REVISION_KEY, DEVICE_ID_KEY, LAST_SYNC_KEY, NEXUS_KEYS, PROFILE_VALUE_KEYS } from "./storage-keys";
+import {
+  ACCOUNT_VALUE_KEYS,
+  CLOUD_REVISION_KEY,
+  DEVICE_ID_KEY,
+  LAST_SYNC_KEY,
+  NEXUS_KEYS,
+  PROFILE_VALUE_KEYS,
+} from "./storage-keys";
 import type { NexusSnapshot, QueuedMutation } from "./types";
 
 interface NexusLocalSchema extends DBSchema {
@@ -40,7 +47,11 @@ function database() {
 
 function parseStored(value: string | null): unknown {
   if (value == null) return null;
-  try { return JSON.parse(value); } catch { return value; }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 function serialized(value: unknown): string {
@@ -69,7 +80,8 @@ export function captureSnapshot(profileId = activeProfileId()): NexusSnapshot {
   }
   for (const key of ACCOUNT_VALUE_KEYS) values[key] = parseStored(localStorage.getItem(key));
   values[NEXUS_KEYS.profiles] = parseStored(localStorage.getItem(NEXUS_KEYS.profiles));
-  const revision = Math.max(0, Number(localStorage.getItem(`${CLOUD_REVISION_KEY}:${profileId}`)) || 0) + 1;
+  const revision =
+    Math.max(0, Number(localStorage.getItem(`${CLOUD_REVISION_KEY}:${profileId}`)) || 0) + 1;
   localStorage.setItem(`${CLOUD_REVISION_KEY}:${profileId}`, String(revision));
   return {
     version: 1,
@@ -98,7 +110,11 @@ export function applySnapshot(snapshot: NexusSnapshot, profileId = snapshot.prof
   }
   localStorage.setItem(`${CLOUD_REVISION_KEY}:${profileId}`, String(snapshot.revision));
   localStorage.setItem(LAST_SYNC_KEY, snapshot.updatedAt);
-  window.dispatchEvent(new CustomEvent("nexus:snapshot-applied", { detail: { profileId, revision: snapshot.revision } }));
+  window.dispatchEvent(
+    new CustomEvent("nexus:snapshot-applied", {
+      detail: { profileId, revision: snapshot.revision },
+    }),
+  );
 }
 
 export async function saveLocalSnapshot(snapshot: NexusSnapshot) {
@@ -135,7 +151,8 @@ export async function queueSnapshot(snapshot: NexusSnapshot) {
 }
 
 export async function pendingMutations(): Promise<QueuedMutation[]> {
-  if (window.nexusDesktop?.cloudPendingMutations) return window.nexusDesktop.cloudPendingMutations();
+  if (window.nexusDesktop?.cloudPendingMutations)
+    return window.nexusDesktop.cloudPendingMutations();
   return (await database()).getAllFromIndex("mutations", "by-created");
 }
 

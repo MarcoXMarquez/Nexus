@@ -1,6 +1,7 @@
 import type { Session, User } from "@supabase/supabase-js";
 
-export type SyncState = "guest" | "offline" | "syncing" | "synced" | "error" | "conflict" | "unconfigured";
+export type SyncState =
+  "guest" | "offline" | "syncing" | "synced" | "error" | "conflict" | "unconfigured";
 
 export type LocalProfile = {
   id: string;
@@ -101,7 +102,9 @@ declare global {
   interface Window {
     nexusCloud?: {
       openAccount: () => void;
-      shareMarathon: (marathon: LocalMarathon) => Promise<{ ok: boolean; url?: string; error?: string }>;
+      shareMarathon: (
+        marathon: LocalMarathon,
+      ) => Promise<{ ok: boolean; url?: string; error?: string }>;
       importInvitation: (token: string) => Promise<{ ok: boolean; error?: string }>;
     };
   }

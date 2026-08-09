@@ -15,8 +15,18 @@ test("web and desktop use the same canonical Nexus application", async () => {
 
 test("the cloud schema protects every private product table with RLS", async () => {
   const sql = await read("../supabase/migrations/202608080001_nexus_cloud.sql");
-  const protectedTables = ["viewer_profiles", "profile_snapshots", "title_progress", "episode_progress", "marathons", "marathon_items", "devices", "user_achievements"];
-  for (const table of protectedTables) assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`, "i"));
+  const protectedTables = [
+    "viewer_profiles",
+    "profile_snapshots",
+    "title_progress",
+    "episode_progress",
+    "marathons",
+    "marathon_items",
+    "devices",
+    "user_achievements",
+  ];
+  for (const table of protectedTables)
+    assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`, "i"));
   assert.match(sql, /accept_marathon_invitation/);
   assert.match(sql, /digest\(invitation_token, 'sha256'\)/);
 });
@@ -68,13 +78,31 @@ test("unwatch operations remain explicit cloud tombstones", async () => {
 
 test("portable marathon codes preserve title order and reject tampering", async () => {
   const source = await read("../app/features/marathon-code.ts");
-  const javascript = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const codec = await import(`data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`);
-  const original = { name: "Trilogía de Tobey", description: "En orden", tasks: [{ itemId: "spiderman-raimi-1" }, { itemId: "spiderman-raimi-2" }, { itemId: "spiderman-raimi-3" }] };
+  const javascript = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const codec = await import(
+    `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
+  );
+  const original = {
+    name: "Trilogía de Tobey",
+    description: "En orden",
+    tasks: [
+      { itemId: "spiderman-raimi-1" },
+      { itemId: "spiderman-raimi-2" },
+      { itemId: "spiderman-raimi-3" },
+    ],
+  };
   const code = codec.encodeMarathonCode(original);
-  const decoded = codec.decodeMarathonCode(code, new Set(original.tasks.map((task) => task.itemId)));
+  const decoded = codec.decodeMarathonCode(
+    code,
+    new Set(original.tasks.map((task) => task.itemId)),
+  );
   assert.match(code, /^NXS1\./);
-  assert.deepEqual(decoded.tasks.map((task) => task.itemId), original.tasks.map((task) => task.itemId));
+  assert.deepEqual(
+    decoded.tasks.map((task) => task.itemId),
+    original.tasks.map((task) => task.itemId),
+  );
   assert.throws(() => codec.decodeMarathonCode(`${code.slice(0, -1)}X`), /modificado|incompleto/i);
 });
 
@@ -121,7 +149,8 @@ test("profile management is replaced by the personal archive experience", async 
   assert.doesNotMatch(renderer, /Modo invitado/);
   assert.doesNotMatch(renderer, /Crear perfil/);
   assert.doesNotMatch(workspace, /id: "profiles"/);
-  for (const feature of ["Eras", "Viajes", "Cartas", "Pósteres", "Sala 3D", "Logros"]) assert.match(discovery, new RegExp(feature));
+  for (const feature of ["Eras", "Viajes", "Cartas", "Pósteres", "Sala 3D", "Logros"])
+    assert.match(discovery, new RegExp(feature));
 });
 
 test("achievements are visual, searchable and grouped by characters", async () => {

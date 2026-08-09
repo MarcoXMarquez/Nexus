@@ -1,0 +1,23 @@
+.next/
+.vinext/
+.wrangler/
+build/
+desktop-dist/
+dist/
+node_modules/
+out/
+proptoopips/
+public/
+work/
+
+# Catálogos generados: se regeneran mediante scripts y no se editan a mano.
+app/backdrop-data.ts
+app/mcu-data.ts
+app/mcu-metadata.ts
+app/title-logo-data.ts
+
+# Archivos locales o generados por herramientas.
+AGENTS.md
+CLAUDE.md
+next-env.d.ts
+package-lock.json
