@@ -203,3 +203,35 @@ test("browser navigation serializes views, titles and social profiles", async ()
   assert.match(renderer, /key=\{selected\.id\}/);
   assert.match(renderer, /closeTopLayer/);
 });
+
+test("the social graph uses explicit friendships and privacy-aware DTO functions", async () => {
+  const sql = await read("../supabase/migrations/202608080004_social_graph.sql");
+  const service = await read("../app/cloud/social-service.ts");
+
+  for (const table of [
+    "social_settings",
+    "friend_requests",
+    "friendships",
+    "profile_blocks",
+    "moderation_reports",
+  ]) {
+    assert.match(sql, new RegExp(`create table if not exists public\\.${table}`, "i"));
+    assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`, "i"));
+  }
+
+  for (const operation of [
+    "search_social_profiles",
+    "send_friend_request",
+    "respond_friend_request",
+    "block_social_profile",
+    "get_social_profile",
+    "compare_friend_progress",
+  ]) {
+    assert.match(sql, new RegExp(`function public\\.${operation}`, "i"));
+    assert.match(service, new RegExp(operation));
+  }
+
+  assert.match(sql, /event\.payload - 'note' - 'email' - 'deviceId'/);
+  assert.match(sql, /profiles_are_blocked/);
+  assert.doesNotMatch(service, /private_note|profile_snapshots|devices/);
+});
