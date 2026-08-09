@@ -12,8 +12,12 @@ import {
 import { NEXUS_KEYS } from "./storage-keys";
 import { cloudConfigured, getSupabase } from "./supabase";
 import type { LocalProfile } from "./types";
-
-const GUEST_ENTRY_KEY = "nexus-guest-entry-v1";
+import {
+  clearInvalidGuestEntry,
+  endGuestSession,
+  getGuestSession,
+  startFreshGuestSession,
+} from "./guest-session";
 
 type Screen = "checking" | "welcome" | "signin" | "signup" | "recover" | "app";
 
@@ -35,6 +39,7 @@ function localProfiles(): LocalProfile[] {
 }
 
 async function prepareAccount(session: Session) {
+  endGuestSession();
   const profiles = await upsertLocalProfiles(session, localProfiles());
   await syncProfile(
     session,
@@ -55,7 +60,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     const client = getSupabase();
     if (!client) {
-      queueMicrotask(() => setScreen(localStorage.getItem(GUEST_ENTRY_KEY) ? "app" : "welcome"));
+      queueMicrotask(() => {
+        clearInvalidGuestEntry();
+        setScreen(getGuestSession() ? "app" : "welcome");
+      });
       return;
     }
     let mounted = true;
@@ -69,7 +77,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
         }
         if (mounted) setScreen("app");
       } else {
-        setScreen(localStorage.getItem(GUEST_ENTRY_KEY) ? "app" : "welcome");
+        clearInvalidGuestEntry();
+        setScreen(getGuestSession() ? "app" : "welcome");
       }
     });
     return () => {
@@ -95,7 +104,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
           setMessage("Cuenta creada. Revisa tu correo y confirma el registro.");
           return;
         }
-        localStorage.removeItem(GUEST_ENTRY_KEY);
         await prepareAccount(data.session);
         setScreen("app");
         return;
@@ -103,7 +111,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
       const { data, error } = await signIn(email, password);
       if (error) throw error;
       if (!data.session) throw new Error("No se pudo iniciar la sesión.");
-      localStorage.removeItem(GUEST_ENTRY_KEY);
       await prepareAccount(data.session);
       setScreen("app");
     } catch (error) {
@@ -155,7 +162,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
               <button
                 className="auth-guest"
                 onClick={() => {
-                  localStorage.setItem(GUEST_ENTRY_KEY, "true");
+                  startFreshGuestSession();
                   setScreen("app");
                 }}
               >

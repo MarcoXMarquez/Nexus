@@ -264,3 +264,95 @@ test("core models and local persistence are isolated from the renderer", async (
   assert.match(localState, /export function useStoredProgress/);
   assert.match(localState, /nexus:snapshot-applied/);
 });
+
+test("guest entry creates an isolated variant and restores account data before login", async () => {
+  const guest = await read("../app/cloud/guest-session.ts");
+  const gate = await read("../app/cloud/auth-gate.tsx");
+  const workspace = await read("../app/cloud/cloud-workspace.tsx");
+  const renderer = await read("../desktop/renderer.tsx");
+
+  assert.match(guest, /export function startFreshGuestSession/);
+  assert.match(guest, /PROFILE_VALUE_KEYS/);
+  assert.match(guest, /ACCOUNT_VALUE_KEYS/);
+  assert.match(guest, /name: `Variante \$\{variantNumber\}`/);
+  assert.match(guest, /crypto\.getRandomValues/);
+  assert.match(guest, /export function endGuestSession/);
+  assert.match(gate, /startFreshGuestSession\(\)/);
+  assert.match(gate, /endGuestSession\(\);[\s\S]*upsertLocalProfiles/);
+  assert.match(workspace, /endGuestSession\(\);[\s\S]*window\.location\.reload\(\)/);
+  assert.match(renderer, /guest=\{Boolean\(guestSession\)\}/);
+  assert.match(renderer, /Crear mi cuenta Nexus/);
+  assert.doesNotMatch(renderer, /name: "Marco"/);
+
+  const storageSource = await read("../app/cloud/storage-keys.ts");
+  const storageJavascript = ts.transpileModule(storageSource, {
+    compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const storageUrl = `data:text/javascript;base64,${Buffer.from(storageJavascript).toString("base64")}`;
+  const guestJavascript = ts
+    .transpileModule(guest, {
+      compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
+    })
+    .outputText.replace('"./storage-keys"', JSON.stringify(storageUrl));
+
+  class MemoryStorage {
+    values = new Map();
+    get length() {
+      return this.values.size;
+    }
+    getItem(key) {
+      return this.values.get(key) ?? null;
+    }
+    setItem(key, value) {
+      this.values.set(key, String(value));
+    }
+    removeItem(key) {
+      this.values.delete(key);
+    }
+    key(index) {
+      return [...this.values.keys()][index] ?? null;
+    }
+  }
+
+  const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const memory = new MemoryStorage();
+  let replacedPath = "";
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: memory });
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      history: { replaceState: (_state, _title, path) => (replacedPath = path) },
+      location: { pathname: "/" },
+      dispatchEvent: () => true,
+    },
+  });
+
+  try {
+    memory.setItem("nexus-desktop-watched-v1", '["iron-man"]');
+    memory.setItem("nexus-desktop-custom-marathons-v1", '[{"id":"mcu"}]');
+    memory.setItem("nexus-desktop-profiles-v1", '[{"id":"principal","name":"Cuenta real"}]');
+    const guestModule = await import(
+      `data:text/javascript;base64,${Buffer.from(guestJavascript).toString("base64")}`
+    );
+    const session = guestModule.startFreshGuestSession();
+    assert.match(session.profile.name, /^Variante \d{4}$/);
+    assert.equal(session.profile.guest, true);
+    assert.equal(memory.getItem("nexus-desktop-watched-v1"), null);
+    assert.equal(memory.getItem("nexus-desktop-custom-marathons-v1"), null);
+    assert.match(memory.getItem("nexus-desktop-profiles-v1"), /Cuenta real/);
+    assert.equal(replacedPath, "/");
+
+    memory.setItem("nexus-desktop-watched-v1", '["thor"]');
+    guestModule.endGuestSession();
+    assert.equal(memory.getItem("nexus-desktop-watched-v1"), '["iron-man"]');
+    assert.equal(memory.getItem("nexus-desktop-custom-marathons-v1"), '[{"id":"mcu"}]');
+    assert.equal(guestModule.getGuestSession(), null);
+  } finally {
+    if (localStorageDescriptor)
+      Object.defineProperty(globalThis, "localStorage", localStorageDescriptor);
+    else delete globalThis.localStorage;
+    if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
+    else delete globalThis.window;
+  }
+});

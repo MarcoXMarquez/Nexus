@@ -788,7 +788,7 @@ function SearchPanel({
         {searching && <i aria-label="Buscando" />}
       </label>
       {query.trim().length < 3 ? (
-        <EmptySocialState title="Busca por identificador" copy="Por ejemplo: @marco-nexus" />
+        <EmptySocialState title="Busca por identificador" copy="Por ejemplo: @variante-616" />
       ) : results.length ? (
         <div className="social-search-results">
           {results.map((result) => (

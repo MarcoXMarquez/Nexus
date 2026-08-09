@@ -27,3 +27,9 @@ Desmarcar un título produce una eliminación explícita o tombstone; no se inte
 - `nexus:social-count`: actualiza el badge de solicitudes.
 
 No deben añadirse botones manuales de sincronización. La pantalla de cuenta puede mostrar estado, última sincronización y errores, pero no controlar el mecanismo.
+
+## Sesión invitada
+
+Entrar como invitado crea una identidad aleatoria `Variante ####` y respalda las claves activas antes de abrir un espacio vacío. Películas vistas, episodios, maratones, logros, listas y preferencias de una cuenta no se muestran dentro de esa variante.
+
+Antes de iniciar sesión o registrarse, `endGuestSession` restaura el respaldo. La aplicación se recarga y solo entonces AuthGate prepara y sincroniza la cuenta. Este orden evita que un snapshot vacío del invitado pueda reemplazar progreso real.

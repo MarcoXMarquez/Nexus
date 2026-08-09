@@ -17,6 +17,7 @@ import {
 } from "../app/narrative-data";
 import { CloudWorkspace } from "../app/cloud/cloud-workspace";
 import { getSupabase } from "../app/cloud/supabase";
+import { endGuestSession, getGuestSession, requestCloudAuth } from "../app/cloud/guest-session";
 import { DiscoveryHub, type DiscoveryItem } from "../app/features/discovery-hub";
 import { decodeMarathonCode, encodeMarathonCode } from "../app/features/marathon-code";
 import { achievementArtFor } from "../app/features/achievement-art";
@@ -707,6 +708,7 @@ const CONNECTION_REASON: Record<string, string> = {
 };
 
 export function App() {
+  const guestSession = useMemo(() => getGuestSession(), []);
   const {
     watched,
     setWatched,
@@ -804,16 +806,25 @@ export function App() {
   const [editingMarathonId, setEditingMarathonId] = useState<string | null>(null);
   const [libraryInitialTab, setLibraryInitialTab] = useState<"saved" | "marathons">("saved");
   const [profiles, setProfiles] = useState<Profile[]>(() => {
+    if (guestSession) return [guestSession.profile];
     try {
       const stored = JSON.parse(localStorage.getItem(PROFILES_KEY) || "[]");
       if (stored.length) return stored;
     } catch {
       /* usa el perfil inicial */
     }
-    return [{ id: "principal", name: "Marco", avatar: "M", color: "#f2454b", child: false }];
+    return [
+      {
+        id: "principal",
+        name: "Usuario Nexus",
+        avatar: "N",
+        color: "#f2454b",
+        child: false,
+      },
+    ];
   });
   const [activeProfileId, setActiveProfileId] = useState(
-    () => localStorage.getItem(ACTIVE_PROFILE_KEY) || "principal",
+    () => guestSession?.profile.id || localStorage.getItem(ACTIVE_PROFILE_KEY) || "principal",
   );
   const viewportRef = useRef<HTMLDivElement>(null);
   const mapInitializedRef = useRef(false);
@@ -866,11 +877,13 @@ export function App() {
   }, [globalQuery, marathons, spoilerSafe, watched]);
 
   useEffect(() => {
+    if (guestSession) return;
     localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
-  }, [profiles]);
+  }, [guestSession, profiles]);
   useEffect(() => {
+    if (guestSession) return;
     localStorage.setItem(ACTIVE_PROFILE_KEY, activeProfileId);
-  }, [activeProfileId]);
+  }, [activeProfileId, guestSession]);
   useEffect(() => {
     localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
     const root = document.documentElement;
@@ -3474,7 +3487,11 @@ export function App() {
                   <span>{activeProfile?.avatar || "N"}</span>
                   <p>
                     <strong>{activeProfile?.name || "Mi cuenta"}</strong>
-                    <small>Preferencias y sincronización</small>
+                    <small>
+                      {guestSession
+                        ? "Sesión temporal sin sincronización"
+                        : "Preferencias y sincronización"}
+                    </small>
                   </p>
                 </div>
                 <button
@@ -3484,7 +3501,7 @@ export function App() {
                   }}
                 >
                   <Icon name="user" />
-                  Cuenta y sincronización
+                  {guestSession ? "Iniciar sesión" : "Cuenta y sincronización"}
                 </button>
                 <button
                   onClick={() => {
@@ -4079,6 +4096,7 @@ export function App() {
       ) : view === "profiles" ? (
         <MyProfileView
           profile={activeProfile}
+          guest={Boolean(guestSession)}
           watched={watched}
           ratings={ratings}
           favorites={favorites}
@@ -6852,6 +6870,7 @@ function AchievementsView({
 
 function MyProfileView({
   profile,
+  guest,
   watched,
   ratings,
   favorites,
@@ -6865,6 +6884,7 @@ function MyProfileView({
   onOpenAchievementRoute,
 }: {
   profile: Profile | undefined;
+  guest: boolean;
   watched: Set<string>;
   ratings: Record<string, number>;
   favorites: Set<string>;
@@ -6883,6 +6903,7 @@ function MyProfileView({
   });
   const [selectedAchievement, setSelectedAchievement] = useState<Achievement | null>(null);
   useEffect(() => {
+    if (guest) return;
     const client = getSupabase();
     if (!client) return;
     let mounted = true;
@@ -6900,7 +6921,51 @@ function MyProfileView({
     return () => {
       mounted = false;
     };
-  }, [profile?.name]);
+  }, [guest, profile?.name]);
+  if (guest) {
+    return (
+      <section className="dashboard-workspace profiles-workspace guest-nexus-profile">
+        <div className="guest-profile-orbit" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
+        <div className="guest-profile-card">
+          <div
+            className="profile-avatar guest-variant-avatar"
+            style={{ background: profile?.color }}
+          >
+            {profile?.avatar || "V"}
+          </div>
+          <span className="dash-eyebrow">IDENTIDAD TEMPORAL DEL MULTIVERSO</span>
+          <h1>{profile?.name || "Variante Nexus"}</h1>
+          <p>
+            Estás explorando una línea temporal limpia. Tu progreso permanece solo en esta sesión
+            invitada y no se mezcla con ninguna cuenta.
+          </p>
+          <div className="guest-profile-actions">
+            <button className="guest-primary" onClick={() => requestCloudAuth("signup")}>
+              Crear mi cuenta Nexus
+            </button>
+            <button onClick={() => requestCloudAuth("signin")}>Ya tengo una cuenta</button>
+          </div>
+          <small>
+            Al iniciar sesión restauraremos tus datos personales antes de sincronizar. Esta variante
+            no sobrescribirá tu recorrido real.
+          </small>
+          <button
+            className="guest-exit"
+            onClick={() => {
+              endGuestSession();
+              window.location.replace("/");
+            }}
+          >
+            Salir de esta variante
+          </button>
+        </div>
+      </section>
+    );
+  }
   const currentYear = new Date().getFullYear();
   const monthly = Array.from(
     { length: 12 },

@@ -24,6 +24,7 @@ import {
 import { captureSnapshot, getDeviceId, saveLocalSnapshot } from "./local-repository";
 import { LAST_SYNC_KEY, NEXUS_KEYS, PENDING_INVITE_KEY } from "./storage-keys";
 import { cloudConfigured, getSupabase } from "./supabase";
+import { endGuestSession } from "./guest-session";
 import type {
   CloudMarathon,
   CloudProfile,
@@ -245,6 +246,15 @@ export function CloudWorkspace(props: Props) {
   }, []);
 
   useEffect(() => {
+    const selectAuthMode = (event: Event) => {
+      const mode = (event as CustomEvent<{ mode?: "signin" | "signup" }>).detail?.mode;
+      if (mode) setFormMode(mode);
+    };
+    window.addEventListener("nexus:open-cloud", selectAuthMode);
+    return () => window.removeEventListener("nexus:open-cloud", selectAuthMode);
+  }, []);
+
+  useEffect(() => {
     if (!session || initializedAccount.current === session.user.id) return;
     initializedAccount.current = session.user.id;
     setStatus(navigator.onLine ? "syncing" : "offline");
@@ -347,17 +357,19 @@ export function CloudWorkspace(props: Props) {
       } else if (formMode === "signup") {
         const { data, error } = await signUp(email, password, displayName);
         if (error) throw error;
-        setMessage(
-          data.session ? "Cuenta creada." : "Cuenta creada. Revisa tu correo para confirmarla.",
-        );
+        if (data.session) {
+          endGuestSession();
+          window.location.reload();
+          return;
+        }
+        setMessage("Cuenta creada. Revisa tu correo para confirmarla.");
       } else {
         const { data, error } = await signIn(email, password);
         if (error) throw error;
-        setSession(data.session);
         if (data.session) {
-          const nextProfiles = await refreshCloudData(data.session);
-          setProfiles(nextProfiles);
-          await runSync("merge", nextProfiles);
+          endGuestSession();
+          window.location.reload();
+          return;
         }
       }
     } catch (error) {
