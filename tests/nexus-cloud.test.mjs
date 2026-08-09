@@ -251,3 +251,16 @@ test("the friends workspace is modular, navigable and privacy aware", async () =
   assert.match(styles, /\.friend-card-grid/);
   assert.match(styles, /\.comparison-lists/);
 });
+
+test("core models and local persistence are isolated from the renderer", async () => {
+  const renderer = await read("../desktop/renderer.tsx");
+  const models = await read("../app/core/models.ts");
+  const localState = await read("../app/core/local-state.ts");
+
+  assert.match(renderer, /from "\.\.\/app\/core\/models"/);
+  assert.match(renderer, /from "\.\.\/app\/core\/local-state"/);
+  assert.doesNotMatch(renderer, /function useStoredProgress/);
+  assert.match(models, /export type SharedMarathon/);
+  assert.match(localState, /export function useStoredProgress/);
+  assert.match(localState, /nexus:snapshot-applied/);
+});

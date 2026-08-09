@@ -22,167 +22,54 @@ import { decodeMarathonCode, encodeMarathonCode } from "../app/features/marathon
 import { achievementArtFor } from "../app/features/achievement-art";
 import { FriendsView } from "../app/features/friends/friends-view";
 import { type AppView, useNexusNavigation } from "../app/features/navigation/nexus-navigation";
-
-type EpisodeState = Record<string, number[]>;
-type MapItem = MCUItem & { releaseValue: number; trackId: string; order: number };
-type Intent = "chronological" | "movies" | "series" | "short" | "new-line" | "random";
-type Recommendation = { item: MapItem; reason: string };
-type IconName =
-  | "search"
-  | "target"
-  | "minus"
-  | "plus"
-  | "fit"
-  | "check"
-  | "film"
-  | "route"
-  | "download"
-  | "upload"
-  | "close"
-  | "chevron"
-  | "home"
-  | "bookmark"
-  | "eye"
-  | "shuffle"
-  | "clock"
-  | "spark"
-  | "bar"
-  | "calendar"
-  | "user"
-  | "star"
-  | "note"
-  | "bell"
-  | "settings"
-  | "trophy"
-  | "share"
-  | "grip";
-type ActivityEvent = {
-  id: string;
-  at: number;
-  action: "watched" | "unwatched" | "episode" | "rewatch" | "rating" | "note" | "undo";
-};
-type CustomList = { id: string; name: string; color: string; items: string[] };
-type Profile = {
-  id: string;
-  name: string;
-  avatar: string;
-  color: string;
-  child: boolean;
-  guest?: boolean;
-};
-type SharedMarathon = {
-  version: 1;
-  id: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  author: string;
-  tasks: Array<{ itemId: string; episode?: number }>;
-  coverIds: string[];
-};
-type SequenceMapData = {
-  id: string;
-  title: string;
-  subtitle: string;
-  tasks: SharedMarathon["tasks"];
-  kind: "marathon" | "era" | "journey" | "route";
-};
-type Preferences = {
-  accent: "red" | "violet" | "cyan";
-  intensity: number;
-  density: "comfortable" | "compact";
-  cardSize: "small" | "medium" | "large";
-  fontScale: number;
-  highContrast: boolean;
-  reduceMotion: boolean;
-  achievements: boolean;
-};
-type AchievementTier = "Bronce" | "Plata" | "Oro" | "Vibranium" | "Diamante";
-type AchievementRecord = {
-  id: string;
-  version: number;
-  unlockedAt: string;
-  progressSnapshot: { completedIds: string[]; requiredIds: string[] };
-};
-type Achievement = {
-  id: string;
-  version: number;
-  title: string;
-  description: string;
-  icon: IconName;
-  tier: AchievementTier;
-  unlocked: boolean;
-  progress: number;
-  current: number;
-  goal: number;
-  requiredIds: string[];
-  completedIds: string[];
-  coverId?: string;
-  unlockedAt?: string;
-};
-type ToastState = { message: string; actionLabel?: string; onAction?: () => void };
-type DetailPanelMode = "full" | "compact";
-type GlobalHit = {
-  key: string;
-  item: MapItem;
-  episode?: number;
-  category: "Título" | "Capítulo" | "Personaje" | "Universo" | "Conexión" | "Maratón";
-  context: string;
-  sequence?: SequenceMapData;
-};
-
-const WATCHED_KEY = "nexus-desktop-watched-v1";
-const EPISODES_KEY = "nexus-desktop-episodes-v1";
-const WATCHLIST_KEY = "nexus-desktop-watchlist-v1";
-const IGNORED_KEY = "nexus-desktop-ignored-v1";
-const FAVORITE_TRACKS_KEY = "nexus-desktop-favorite-tracks-v1";
-const INTENT_KEY = "nexus-desktop-intent-v1";
-const SPOILERS_KEY = "nexus-desktop-spoilers-v1";
-const ACTIVITY_KEY = "nexus-desktop-activity-v1";
-const RATINGS_KEY = "nexus-desktop-ratings-v1";
-const FAVORITES_KEY = "nexus-desktop-favorites-v1";
-const NOTES_KEY = "nexus-desktop-notes-v1";
-const WATCHED_DATES_KEY = "nexus-desktop-watched-dates-v1";
-const REWATCHES_KEY = "nexus-desktop-rewatches-v1";
-const HISTORY_KEY = "nexus-desktop-history-v1";
-const CUSTOM_LISTS_KEY = "nexus-desktop-custom-lists-v1";
-const REMINDERS_KEY = "nexus-desktop-reminders-v1";
-const MARATHON_KEY = "nexus-desktop-marathon-v1";
-const PROFILES_KEY = "nexus-desktop-profiles-v1";
-const ACTIVE_PROFILE_KEY = "nexus-desktop-active-profile-v1";
-const CUSTOM_MARATHONS_KEY = "nexus-desktop-custom-marathons-v1";
-const PREFERENCES_KEY = "nexus-desktop-preferences-v1";
-const UNLOCKED_ACHIEVEMENTS_KEY = "nexus-desktop-achievements-v1";
-const ACHIEVEMENT_RECORDS_KEY = "nexus-desktop-achievement-records-v1";
-const DEFAULT_PREFERENCES: Preferences = {
-  accent: "red",
-  intensity: 82,
-  density: "comfortable",
-  cardSize: "medium",
-  fontScale: 100,
-  highContrast: false,
-  reduceMotion: false,
-  achievements: true,
-};
-const PROFILE_DATA_KEYS = [
-  WATCHED_KEY,
-  EPISODES_KEY,
-  WATCHLIST_KEY,
-  IGNORED_KEY,
-  FAVORITE_TRACKS_KEY,
-  INTENT_KEY,
-  SPOILERS_KEY,
+import {
   ACTIVITY_KEY,
-  RATINGS_KEY,
-  FAVORITES_KEY,
-  NOTES_KEY,
-  WATCHED_DATES_KEY,
-  REWATCHES_KEY,
-  HISTORY_KEY,
+  ACHIEVEMENT_RECORDS_KEY,
+  ACTIVE_PROFILE_KEY,
   CUSTOM_LISTS_KEY,
-  REMINDERS_KEY,
+  CUSTOM_MARATHONS_KEY,
+  DEFAULT_PREFERENCES,
+  EPISODES_KEY,
+  FAVORITES_KEY,
+  FAVORITE_TRACKS_KEY,
+  HISTORY_KEY,
+  IGNORED_KEY,
+  INTENT_KEY,
   MARATHON_KEY,
-];
+  NOTES_KEY,
+  PREFERENCES_KEY,
+  PROFILE_DATA_KEYS,
+  PROFILES_KEY,
+  RATINGS_KEY,
+  REMINDERS_KEY,
+  REWATCHES_KEY,
+  SPOILERS_KEY,
+  UNLOCKED_ACHIEVEMENTS_KEY,
+  WATCHED_DATES_KEY,
+  WATCHED_KEY,
+  WATCHLIST_KEY,
+  useStoredMarathons,
+  useStoredProgress,
+} from "../app/core/local-state";
+import type {
+  Achievement,
+  AchievementRecord,
+  AchievementTier,
+  ActivityEvent,
+  CustomList,
+  DetailPanelMode,
+  EpisodeState,
+  GlobalHit,
+  IconName,
+  Intent,
+  MapItem,
+  Preferences,
+  Profile,
+  Recommendation,
+  SequenceMapData,
+  SharedMarathon,
+  ToastState,
+} from "../app/core/models";
 const YEAR_START = 1992;
 const YEAR_END = 2028;
 const MAP_LEFT = 250;
@@ -818,289 +705,6 @@ const CONNECTION_REASON: Record<string, string> = {
   "xmen-last-stand": "Forma parte del recorrido que converge en Deadpool & Wolverine",
   logan: "Contexto recomendado antes de Deadpool & Wolverine",
 };
-
-function useStoredProgress() {
-  const [watched, setWatched] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(WATCHED_KEY) || "[]"));
-    } catch {
-      return new Set();
-    }
-  });
-  const [episodes, setEpisodes] = useState<EpisodeState>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(EPISODES_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [watchlist, setWatchlist] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(WATCHLIST_KEY) || "[]"));
-    } catch {
-      return new Set();
-    }
-  });
-  const [ignored, setIgnored] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(IGNORED_KEY) || "[]"));
-    } catch {
-      return new Set();
-    }
-  });
-  const [favoriteTracks, setFavoriteTracks] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(FAVORITE_TRACKS_KEY) || '["mcu","series"]'));
-    } catch {
-      return new Set(["mcu", "series"]);
-    }
-  });
-  const [intent, setIntent] = useState<Intent>(
-    () => (localStorage.getItem(INTENT_KEY) as Intent) || "chronological",
-  );
-  const [spoilerSafe, setSpoilerSafe] = useState(
-    () => localStorage.getItem(SPOILERS_KEY) !== "false",
-  );
-  const [activity, setActivity] = useState<Record<string, number>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(ACTIVITY_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [ratings, setRatings] = useState<Record<string, number>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(RATINGS_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [favorites, setFavorites] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]"));
-    } catch {
-      return new Set();
-    }
-  });
-  const [notes, setNotes] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(NOTES_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [watchedDates, setWatchedDates] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(WATCHED_DATES_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [rewatches, setRewatches] = useState<Record<string, number>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(REWATCHES_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [history, setHistory] = useState<ActivityEvent[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-    } catch {
-      return [];
-    }
-  });
-  const [customLists, setCustomLists] = useState<CustomList[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(CUSTOM_LISTS_KEY) || "[]");
-    } catch {
-      return [];
-    }
-  });
-  useEffect(() => {
-    const reloadCloudSnapshot = () => {
-      try {
-        setWatched(new Set(JSON.parse(localStorage.getItem(WATCHED_KEY) || "[]")));
-      } catch {
-        setWatched(new Set());
-      }
-      try {
-        setEpisodes(JSON.parse(localStorage.getItem(EPISODES_KEY) || "{}"));
-      } catch {
-        setEpisodes({});
-      }
-      try {
-        setWatchlist(new Set(JSON.parse(localStorage.getItem(WATCHLIST_KEY) || "[]")));
-      } catch {
-        setWatchlist(new Set());
-      }
-      try {
-        setIgnored(new Set(JSON.parse(localStorage.getItem(IGNORED_KEY) || "[]")));
-      } catch {
-        setIgnored(new Set());
-      }
-      try {
-        setFavoriteTracks(new Set(JSON.parse(localStorage.getItem(FAVORITE_TRACKS_KEY) || "[]")));
-      } catch {
-        setFavoriteTracks(new Set());
-      }
-      setIntent((localStorage.getItem(INTENT_KEY) as Intent) || "chronological");
-      setSpoilerSafe(localStorage.getItem(SPOILERS_KEY) !== "false");
-      try {
-        setActivity(JSON.parse(localStorage.getItem(ACTIVITY_KEY) || "{}"));
-      } catch {
-        setActivity({});
-      }
-      try {
-        setRatings(JSON.parse(localStorage.getItem(RATINGS_KEY) || "{}"));
-      } catch {
-        setRatings({});
-      }
-      try {
-        setFavorites(new Set(JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]")));
-      } catch {
-        setFavorites(new Set());
-      }
-      try {
-        setNotes(JSON.parse(localStorage.getItem(NOTES_KEY) || "{}"));
-      } catch {
-        setNotes({});
-      }
-      try {
-        setWatchedDates(JSON.parse(localStorage.getItem(WATCHED_DATES_KEY) || "{}"));
-      } catch {
-        setWatchedDates({});
-      }
-      try {
-        setRewatches(JSON.parse(localStorage.getItem(REWATCHES_KEY) || "{}"));
-      } catch {
-        setRewatches({});
-      }
-      try {
-        setHistory(JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"));
-      } catch {
-        setHistory([]);
-      }
-      try {
-        setCustomLists(JSON.parse(localStorage.getItem(CUSTOM_LISTS_KEY) || "[]"));
-      } catch {
-        setCustomLists([]);
-      }
-    };
-    window.addEventListener("nexus:snapshot-applied", reloadCloudSnapshot);
-    return () => window.removeEventListener("nexus:snapshot-applied", reloadCloudSnapshot);
-  }, []);
-  useEffect(() => localStorage.setItem(WATCHED_KEY, JSON.stringify([...watched])), [watched]);
-  useEffect(() => localStorage.setItem(EPISODES_KEY, JSON.stringify(episodes)), [episodes]);
-  useEffect(() => localStorage.setItem(WATCHLIST_KEY, JSON.stringify([...watchlist])), [watchlist]);
-  useEffect(() => localStorage.setItem(IGNORED_KEY, JSON.stringify([...ignored])), [ignored]);
-  useEffect(
-    () => localStorage.setItem(FAVORITE_TRACKS_KEY, JSON.stringify([...favoriteTracks])),
-    [favoriteTracks],
-  );
-  useEffect(() => localStorage.setItem(INTENT_KEY, intent), [intent]);
-  useEffect(() => localStorage.setItem(SPOILERS_KEY, String(spoilerSafe)), [spoilerSafe]);
-  useEffect(() => localStorage.setItem(ACTIVITY_KEY, JSON.stringify(activity)), [activity]);
-  useEffect(() => localStorage.setItem(RATINGS_KEY, JSON.stringify(ratings)), [ratings]);
-  useEffect(() => localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites])), [favorites]);
-  useEffect(() => localStorage.setItem(NOTES_KEY, JSON.stringify(notes)), [notes]);
-  useEffect(
-    () => localStorage.setItem(WATCHED_DATES_KEY, JSON.stringify(watchedDates)),
-    [watchedDates],
-  );
-  useEffect(() => localStorage.setItem(REWATCHES_KEY, JSON.stringify(rewatches)), [rewatches]);
-  useEffect(
-    () => localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-500))),
-    [history],
-  );
-  useEffect(
-    () => localStorage.setItem(CUSTOM_LISTS_KEY, JSON.stringify(customLists)),
-    [customLists],
-  );
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent("nexus:local-change", { detail: { kind: "progress" } }));
-  }, [
-    watched,
-    episodes,
-    watchlist,
-    ignored,
-    favoriteTracks,
-    intent,
-    spoilerSafe,
-    activity,
-    ratings,
-    favorites,
-    notes,
-    watchedDates,
-    rewatches,
-    history,
-    customLists,
-  ]);
-  return {
-    watched,
-    setWatched,
-    episodes,
-    setEpisodes,
-    watchlist,
-    setWatchlist,
-    ignored,
-    setIgnored,
-    favoriteTracks,
-    setFavoriteTracks,
-    intent,
-    setIntent,
-    spoilerSafe,
-    setSpoilerSafe,
-    activity,
-    setActivity,
-    ratings,
-    setRatings,
-    favorites,
-    setFavorites,
-    notes,
-    setNotes,
-    watchedDates,
-    setWatchedDates,
-    rewatches,
-    setRewatches,
-    history,
-    setHistory,
-    customLists,
-    setCustomLists,
-  };
-}
-
-function readStoredMarathons(): SharedMarathon[] {
-  try {
-    const value = JSON.parse(localStorage.getItem(CUSTOM_MARATHONS_KEY) || "[]");
-    return Array.isArray(value)
-      ? value.filter((entry): entry is SharedMarathon =>
-          Boolean(entry?.id && entry?.name && Array.isArray(entry?.tasks)),
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function useStoredMarathons() {
-  const [marathons, setMarathons] = useState<SharedMarathon[]>(readStoredMarathons);
-  const firstWrite = useRef(true);
-  useEffect(() => {
-    localStorage.setItem(CUSTOM_MARATHONS_KEY, JSON.stringify(marathons));
-    if (firstWrite.current) {
-      firstWrite.current = false;
-      return;
-    }
-    window.dispatchEvent(new CustomEvent("nexus:local-change", { detail: { kind: "marathons" } }));
-  }, [marathons]);
-  useEffect(() => {
-    const reload = () => setMarathons(readStoredMarathons());
-    window.addEventListener("nexus:snapshot-applied", reload);
-    return () => window.removeEventListener("nexus:snapshot-applied", reload);
-  }, []);
-  return { marathons, setMarathons };
-}
 
 export function App() {
   const {
